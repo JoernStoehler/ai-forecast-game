@@ -1,4 +1,6 @@
-# M1: Infrastructure & Scaffolding
+# M0: Planning & Design Decisions
+
+(M1 = scaffold execution, separate session)
 
 ## Project Overview
 
