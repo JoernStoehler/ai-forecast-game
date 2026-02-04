@@ -30,6 +30,27 @@ Note: Playwright browsers are pre-installed on CC web (pinned to v1.56.1).
 - playwright e2e
 - gh cli (installed via `npm run setup:ccweb`)
 
+## Claude Code Web Limitations
+
+**DO NOT** attempt to:
+- Run `npx playwright install` (browser downloads blocked, storage.googleapis.com unreachable)
+- Change @playwright/test version (must stay pinned to 1.56.1 to match pre-installed browsers)
+- Use Playwright MCP (use CLI instead)
+- Access external URLs from browser (blocked with ERR_TUNNEL_CONNECTION_FAILED)
+
+**Visual development workflow** (screenshots of local dev server):
+```bash
+# Start dev server in background
+npm run dev &
+
+# Take screenshot (localhost works, external URLs don't)
+npx playwright screenshot http://localhost:5173 /tmp/screenshot.png
+
+# View screenshot with Read tool - Claude can see images
+```
+
+**Testing deployments**: Test from your own browser or local dev environment. CC web browsers cannot reach external URLs.
+
 ## Needs Setup
 - wrangler
   - [ ] create .env from .env.example with CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
