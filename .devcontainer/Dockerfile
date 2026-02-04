@@ -37,53 +37,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fzf \
     && rm -rf /var/lib/apt/lists/*
 
-# Browser dependencies for Playwright/Puppeteer
-# These are the system libraries needed to run Chromium, Firefox, WebKit
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Chromium dependencies
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxkbcommon0 \
-    libatspi2.0-0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2t64 \
-    # Firefox dependencies
-    libgtk-3-0 \
-    # WebKit dependencies
-    libwoff1 \
-    libharfbuzz-icu0 \
-    libgstreamer-plugins-bad1.0-0 \
-    libgstreamer-gl1.0-0 \
-    libenchant-2-2 \
-    libsecret-1-0 \
-    libhyphen0 \
-    libmanette-0.2-0 \
-    libgtk-4-1 \
-    libgraphene-1.0-0 \
-    libxslt1.1 \
-    libevent-2.1-7t64 \
-    libopus0 \
-    flite1-dev \
-    libwebpdemux2 \
-    libavif16 \
-    libwebpmux3 \
-    libwayland-server0 \
-    libgles2 \
-    libx264-dev \
-    # Shared
-    xvfb \
-    fonts-liberation \
-    fonts-noto-color-emoji \
-    && rm -rf /var/lib/apt/lists/*
 
 # VS Code tunnel CLI (bake into image for faster postCreate)
 RUN set -eux; \

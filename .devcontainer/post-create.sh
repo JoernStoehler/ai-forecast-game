@@ -33,8 +33,10 @@ if [ -f "package.json" ]; then
   npm install
 fi
 
-# Install Playwright browsers (cached via bind mount)
+# Install Playwright system deps + browsers
 if [ -f "package.json" ] && grep -q '"@playwright/test"' package.json 2>/dev/null; then
+  echo "Installing Playwright system dependencies..."
+  sudo npx playwright install-deps
   echo "Installing Playwright browsers..."
   npx playwright install
 fi
