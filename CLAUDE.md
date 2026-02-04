@@ -1,85 +1,76 @@
 # AI Forecast Game — Agent Instructions
 
-## Project Rules
+## Project Facts
 
-**Specs are requirements, not suggestions:**
-- `docs/*.md` files define what to build
+**What this is:** A web game exploring AI futures through policy decisions. Players read LLM-generated news, vote on policy topics, see consequences, repeat. Goal: build intuition for how AI risk unfolds. Ends in EXTINCTION or UTOPIA.
+
+**Tech stack:** React + TypeScript frontend (Vite), Cloudflare Worker backend (D1 database), LLM integration via Vercel AI SDK.
+
+**Where things live:**
+- `docs/*.md` — Specifications (these are requirements)
+- `src/` — Frontend components, hooks, types, prompts
+- `worker/` — Backend API, database, LLM integration
+- `e2e/` — Playwright end-to-end tests
+
+**Owner:** Jörn Stöhler — writes specs, approves spec changes, answers questions when blocked.
+
+---
+
+## Invariants
+
+**Specs are authoritative:**
+- `docs/*.md` files define what to build — implement to spec
 - Do NOT modify specs without explicit approval from Jörn
-- If a spec seems wrong or unclear, ASK before changing it
+- If a spec seems wrong or unclear, ask before changing it
+- Don't "fix" specs to match what you built — fix code to match specs
 
-**Definition of Done (before checking a checkbox):**
+**Definition of Done (before marking work complete):**
 - Code compiles and passes lint
 - Feature works end-to-end (not just "function exists")
 - Can be demonstrated (manually or via test)
 - `raise NotImplementedError` or `// TODO` stubs do NOT count as done
 
-**If blocked or uncertain:**
-- Don't guess — ask Jörn
-- Don't "fix" specs to match what you built — fix code to match specs
+**No guessing:**
+- Don't proceed with assumptions on ambiguous requirements
 
 ---
 
-# Setup Status
+## Processes
 
-## Smoke Test
+### Verifying Changes
 
-### Local devcontainer
-First run: `npm install` (generates package-lock.json), then:
 ```bash
-npm ci && npm run build && npm test && npx playwright install && npm run test:e2e
-```
+# Local devcontainer (first run: npm install && npx playwright install)
+npm ci && npm run build && npm test && npm run test:e2e
 
-### Claude Code web
-```bash
+# Claude Code web
 npm run setup:ccweb && npm run build && npm test && npm run test:e2e
 ```
-Note: Playwright browsers are pre-installed on CC web (pinned to v1.56.1).
 
-## Ready (local devcontainer)
-- devcontainer (node 22, playwright, cli tools)
-- vite + react + typescript
-- vitest + @testing-library/react
-- playwright e2e
-- gh cli (auth via mount)
-- claude code (auth via mount)
-- vscode tunnel (auth via mount)
+### Applying Database Migrations
 
-## Ready (Claude Code web)
-- node 22, playwright 1.56.1 with browsers pre-installed
-- vite + react + typescript
-- vitest + @testing-library/react
-- playwright e2e
-- gh cli (installed via `npm run setup:ccweb`)
-
-## Claude Code Web Limitations
-
-**DO NOT** attempt to:
-- Run `npx playwright install` (browser downloads blocked, storage.googleapis.com unreachable)
-- Change @playwright/test version (must stay pinned to 1.56.1 to match pre-installed browsers)
-- Use Playwright MCP (use CLI instead)
-- Access external URLs from browser (blocked with ERR_TUNNEL_CONNECTION_FAILED)
-
-**Visual development workflow** (screenshots of local dev server):
+After adding new migration files in `worker/migrations/`:
 ```bash
-# Start dev server in background
-npm run dev &
-
-# Take screenshot (localhost works, external URLs don't)
-npx playwright screenshot http://localhost:5173 /tmp/screenshot.png
-
-# View screenshot with Read tool - Claude can see images
+npx wrangler d1 migrations apply ai-forecast-game-db --remote
 ```
 
-**Testing deployments**: Test from your own browser or local dev environment. CC web browsers cannot reach external URLs.
+### Visual Development (Screenshots)
 
-## Ready (Cloudflare)
-- wrangler configured (credentials in environment)
-- D1 database created and migrations applied
-- Run `npx wrangler d1 migrations apply ai-forecast-game-db --remote` after adding new migrations
+For UI work, capture and view screenshots:
+```bash
+npm run dev &
+npx playwright screenshot http://localhost:5173 /tmp/screenshot.png
+# Use Read tool to view the image
+```
 
-## Needs Setup
-- ci/cd
-  - [ ] add CLOUDFLARE_API_TOKEN to GitHub repo secrets
-  - [ ] add CLOUDFLARE_ACCOUNT_ID to GitHub repo secrets
-- custom domain
-  - [ ] configure subdomain in Cloudflare dashboard, update wrangler.toml routes
+---
+
+## Domain Facts
+
+### Claude Code Web Environment
+
+CC Web has pre-installed Playwright browsers but restricted network access:
+
+- **Playwright pinned to v1.56.1** — do not upgrade or run `npx playwright install`
+- **No external URLs** — browsers get `ERR_TUNNEL_CONNECTION_FAILED`; test deployments from your own browser
+- **No .claude/ features** — skills, hooks, custom agents don't work; use CLI directly
