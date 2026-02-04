@@ -8,6 +8,7 @@ pages_build_output_dir = "dist"
 binding = "DB"
 database_name = "ai-forecast-game-db"
 database_id = "d4eb1809-eb9f-4be1-bb90-f749573debc7"
+migrations_dir = "worker/migrations"
 
 # Custom domain (configure in Cloudflare dashboard)
 # routes = [{ pattern = "<tbd>.joernstoehler.com", custom_domain = true }]

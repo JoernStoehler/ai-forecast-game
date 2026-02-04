@@ -4,5 +4,5 @@ import App from "./App";
 
 test("renders heading", () => {
   render(<App />);
-  expect(screen.getByRole("heading")).toHaveTextContent("AI Forecast Game");
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("AI Forecast Game");
 });
