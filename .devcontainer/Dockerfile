@@ -38,6 +38,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 
+# Playwright system dependencies (cached in image layer)
+# Run before Node.js install since this is heavy and rarely changes
+RUN npx playwright@latest install-deps
+
 # VS Code tunnel CLI (bake into image for faster postCreate)
 RUN set -eux; \
     tmpdir="$(mktemp -d)"; \
