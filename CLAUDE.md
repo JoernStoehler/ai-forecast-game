@@ -1,9 +1,11 @@
 # Setup Status
 
 ## Smoke Test
+First run: `npm install` (generates package-lock.json), then:
 ```bash
 npm ci && npm run build && npm test && npx playwright install && npm run test:e2e
 ```
+TODO: run in container, update this section with failures
 
 ## Ready
 - devcontainer (node 22, playwright, puppeteer, cli tools)
