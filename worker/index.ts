@@ -11,5 +11,5 @@ export default {
 };
 
 interface Env {
-  // Add bindings here (KV, D1, etc.)
+  DB: D1Database;
 }
