@@ -1,5 +1,10 @@
 # Setup Status
 
+## Smoke Test
+```bash
+npm ci && npm run build && npm test && npx playwright install && npm run test:e2e
+```
+
 ## Ready
 - devcontainer (node 22, playwright, puppeteer, cli tools)
 - vite + react + typescript
