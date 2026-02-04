@@ -12,7 +12,7 @@ A <15 minute web game exploring AI futures. Players experience a simulated traje
 
 ## Current Status
 
-**Milestone:** M1 (Scaffold)
+**Milestone:** M1 (Scaffold) — Nearly Complete
 **Tracking:** See `m1-scope.md` for checkbox status
 
 ### Milestone Overview
@@ -20,7 +20,7 @@ A <15 minute web game exploring AI futures. Players experience a simulated traje
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | M0 | Planning & design | ✅ Complete |
-| M1 | Scaffold (Vite + React + Worker + D1) | 🔄 In Progress |
+| M1 | Scaffold (Vite + React + Worker + D1) | ✅ Code complete, needs deploy test |
 | M2 | LLM prototyping with real content | Not started |
 | M3 | Game logic polish | Not started |
 | M4 | Visual polish | Not started |
