@@ -87,3 +87,30 @@ Dots count, color, animation? Or use standard spinner?
 - [x] Snapshot-based storage: Each turn creates new hash, URL = /?snapshot=abc123
 - [x] Topic/option descriptions: Optional, LLM decides based on complexity
 - [x] Selection UX: Standard radio buttons, no defaults, Submit locked until all topics selected
+- [x] Q7-Q9: Pre-2026 history (hardcoded), phase transitions (LLM decides), time progression (inferred from dates)
+- [x] Content workflow: Jörn writes expert/*.md, agent transforms to src/prompts/*.ts
+- [x] Interview workflow: Agent interrogates Jörn, prioritizes questions, pushes back on unclear explanations
+
+---
+
+## Noted for Later Milestones
+
+### Game Identity (M4-M5)
+- Game name/title — not decided yet
+- Visual design — color scheme, typography
+- Favicon, meta tags for social sharing
+- Content warning for extinction themes?
+
+### Infrastructure (M1)
+- LLM API keys via .env (local) or environment config (prod)
+- Local dev with Miniflare for Worker testing
+
+### Legal/Safety (M5)
+- Privacy policy (we store pseudonym + playthroughs)
+- Cookie consent if using cookies
+- Content warning decision
+
+### Monitoring (M5+)
+- LLM cost tracking
+- Error logging
+- Analytics (games played, endings, etc.)
