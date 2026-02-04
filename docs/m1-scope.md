@@ -24,7 +24,12 @@ Set up a working project structure that can render the UI and make LLM calls. No
 | **zod** | Schema validation | Most popular TS validation lib, great inference |
 | **lucide-react** | Icons | Tree-shakeable, consistent with shadcn/ui |
 | **nanoid** | ID generation | Standard, small, configurable alphabet |
-| **@anthropic-ai/sdk** | LLM client | Official SDK, streaming support |
+| **ai** (Vercel AI SDK) | LLM client | Unified multi-provider, streaming built-in; fallback: manual fetch |
+
+**LLM SDK strategy:**
+1. Try `ai` (Vercel AI SDK) — handles streaming, works with Anthropic/OpenAI/Google
+2. If Workers friction → fall back to manual fetch + Zod (parsing code in architecture.md)
+3. Don't troubleshoot — if it doesn't work out of box, move on
 
 **Not using:**
 - Redux/Zustand — overkill for this scale, React context sufficient

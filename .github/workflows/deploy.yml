@@ -33,7 +33,6 @@ jobs:
 
   deploy:
     needs: [test, e2e]
-    needs: test
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
