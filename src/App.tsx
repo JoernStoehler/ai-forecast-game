@@ -6,20 +6,22 @@ import { NewsTab } from './components/NewsTab/NewsTab';
 import { VoteTab } from './components/VoteTab/VoteTab';
 import { SummaryTab } from './components/SummaryTab';
 import { useGameState } from './hooks/useGameState';
+import type { SummaryResponse } from './types/game';
 import './App.css';
 
 export default function App() {
   const {
     state,
-    summary,
     error,
     startGame,
     submitChoices,
-    loadSummary,
     resetGame,
   } = useGameState();
 
   const [activeTab, setActiveTab] = useState<TabId>('tutorial');
+
+  // Extract summary from state (it's optional)
+  const summary = ('summary' in state ? state.summary : null) as SummaryResponse | null;
 
   // Determine which tabs are visible
   const visibleTabs = useMemo((): TabId[] => {
@@ -38,20 +40,17 @@ export default function App() {
       setActiveTab('tutorial');
     } else if (state.isGameOver) {
       setActiveTab('summary');
-      loadSummary();
     } else if (state.currentVote) {
-      // Don't auto-switch if user is on news tab
       if (activeTab === 'tutorial') {
         setActiveTab('news');
       }
     } else {
       setActiveTab('news');
     }
-  }, [state.snapshot, state.isGameOver, state.currentVote, loadSummary, activeTab]);
+  }, [state.snapshot, state.isGameOver, state.currentVote, activeTab]);
 
   const handleNewGame = useCallback(() => {
     if (state.snapshot && !state.isGameOver) {
-      // Confirm abandoning current game
       if (!window.confirm('Abandon current game and start a new one?')) {
         return;
       }
@@ -74,7 +73,6 @@ export default function App() {
     }
   }, [summary]);
 
-  // Show new button except on tutorial
   const showNewButton = state.snapshot !== null;
 
   return (

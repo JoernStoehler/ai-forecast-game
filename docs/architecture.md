@@ -135,6 +135,7 @@ const GameStateSchema = z.object({
   phase: z.string(),
   date: DateSchema,
   isGameOver: z.boolean(),
+  summary: SummaryResponseSchema.optional(),  // Set after post-game generation
 });
 
 // TypeScript types derived from Zod
@@ -168,95 +169,138 @@ No page reloads. React Router or simple `useEffect` on URL params.
 
 ### Responsibilities
 
-1. **Create game** — Roll preset, initialize state, return snapshot in `awaiting_llm` status
-2. **Get state** — Return current game state with status for given snapshot
-3. **Submit turn** — Persist player choices (instant), return new snapshot in `awaiting_llm` status
-4. **Stream LLM** — Generate and stream LLM response, create new snapshot when complete
-5. **Stream summary** — Generate post-game summary (M3+)
-6. **Aggregate stats** — Compute baseline comparisons (M5)
+1. **Create game** — Roll preset, initialize state, return snapshot ID
+2. **Load snapshot** — Return game state (or status if generating/failed)
+3. **Submit vote** — Persist player choices (instant), return new snapshot ID
+4. **Generate** — LLM generates next turn or summary, streams response, creates new snapshot
 
 ### Snapshot Status
 
-Each snapshot has a status:
-- `awaiting_llm` — Needs LLM generation (fresh game, or has player choices without LLM response)
-- `complete` — Has vote topics for player to respond to, or is game over
+Each snapshot in the database has a status:
+- `reserved` — ID has been handed out, LLM generation is in progress
+- `exists` — Complete snapshot with full game state
+- `failed` — Generation failed, snapshot cannot be used
+
+### Turn Types
+
+The `getWhoseTurn()` function determines what action is valid:
+- `llm` — Game needs LLM generation (empty events, or player just voted)
+- `player` — Game is waiting for player vote (last event is a VoteEvent)
+- `summary` — Game is over, needs summary generation
+- `done` — Game is complete with summary
 
 ### Endpoints
 
 ```
 POST /api/game/create
   Request: {}
-  Response: { snapshot: string, state: GameState, status: 'awaiting_llm' }
-  // New game always needs initial LLM generation
+  Response: { snapshot: string }
+  // Creates initial game state with random preset
+  // Snapshot is immediately usable (status: 'exists')
 
-GET /api/game/:snapshot
-  Response: { state: GameState, status: 'awaiting_llm' | 'complete' }
-  // Load any snapshot, status tells frontend what to do next
+GET /api/game/:id
+  Response varies by status:
+    200 OK: { state: GameState }           // status: 'exists'
+    202 Accepted: { status: 'generating' } // status: 'reserved'
+    404 Not Found: { error: 'Unknown' }    // not in database
+    410 Gone: { error: 'Failed' }          // status: 'failed'
 
-POST /api/game/:snapshot/turn
+POST /api/game/:id/submit
   Request: { choices: VoteChoices }  -- Zod-validated
-  Response: { snapshot: string, state: GameState, status: 'awaiting_llm' }
-  // Instant operation - persists player choices, returns new snapshot
-  // Only valid when current snapshot status is 'complete'
+  Response: { snapshot: string }
+  // Instant operation - persists player choices in new snapshot
+  // Returns 400 if not player's turn
 
-GET /api/game/:snapshot/stream
-  Response: Streaming TurnResponse (NDJSON, growing object)
+POST /api/game/:id/generate
+  Response: Streaming NDJSON
     - Each line is partial JSON as tokens arrive
-    - Final shape: { events: [...], vote?: {...}, gameOver?: {...}, phase }
+    - Final shape: TurnResponse or SummaryResponse
   Headers:
     Content-Type: text/plain; charset=utf-8
     Transfer-Encoding: chunked
-    X-New-Snapshot: abc456  -- Final snapshot created when stream completes
-  // Only valid when snapshot status is 'awaiting_llm'
-  // If called again on same snapshot, restarts generation (idempotent)
-
-GET /api/game/:snapshot/summary
-  Response: Streaming SummaryResponse (NDJSON)
-  // Only valid for game over snapshots
+    X-Snapshot: abc456  -- New snapshot ID (reserved immediately)
+  // Unified endpoint: handles both regular turns and summary generation
+  // Determines which to run based on getWhoseTurn()
+  // Returns 400 if not LLM's turn (or summary turn)
 ```
 
 ### Flow Diagram
 
 ```
-Player submits vote on snapshot A (status: complete)
+New Game:
+POST /create ─────► Creates snapshot A (status: exists, empty events)
          │
          ▼
-POST /turn ─────► Creates snapshot B (status: awaiting_llm)
-         │        Player's choice persisted immediately
+POST /generate on A ─────► Returns X-Snapshot: B (status: reserved)
+         │                 Streams LLM response
+         │                 Finalizes B (status: exists) when done
          │
          ▼
-GET /stream on B ─────► Streams LLM response
-         │              Creates snapshot C when done
+URL updates to B
+Player sees news + vote topics
+```
+
+```
+Player Turn:
+Player submits vote on snapshot B
          │
          ▼
-URL updates to C (status: complete)
-Player sees new news + vote topics
+POST /submit ─────► Creates snapshot C (status: exists)
+         │          Player's choice persisted immediately
+         │
+         ▼
+POST /generate on C ─────► Returns X-Snapshot: D (status: reserved)
+         │                 Streams LLM response
+         │                 Finalizes D (status: exists) when done
+         │
+         ▼
+URL updates to D
+Player sees new news + vote topics (or game over)
+```
+
+```
+Post-Game Summary:
+Game over on snapshot D (isGameOver: true)
+         │
+         ▼
+POST /generate on D ─────► Returns X-Snapshot: E (status: reserved)
+         │                 Streams SummaryResponse
+         │                 Finalizes E (status: exists, has summary)
+         │
+         ▼
+URL updates to E
+Player sees summary tab
 ```
 
 **Reconnection:** If frontend disconnects mid-stream:
-1. Page reload → GET /:snapshot on B
-2. Sees status: awaiting_llm
-3. GET /stream on B → Restarts LLM generation
-4. Player's choice (already in B) is preserved
+1. Page reload → GET /:snapshot on D (reserved)
+2. Response: 202 Accepted (status: generating)
+3. Frontend polls until ready
+4. When generation completes, snapshot becomes 'exists'
 
 ### Storage (D1)
 
 ```sql
 CREATE TABLE games (
   snapshot TEXT PRIMARY KEY,     -- 6-char alphanumeric hash
+  version INTEGER NOT NULL DEFAULT 1,
   preset TEXT NOT NULL,
-  state JSON NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  ended_at TIMESTAMP,
+  state JSON,                    -- NULL when status='reserved'
+  status TEXT NOT NULL DEFAULT 'exists',  -- 'reserved', 'exists', 'failed'
+  created_at TEXT DEFAULT (datetime('now')),
+  ended_at TEXT,
   outcome TEXT  -- 'EXTINCTION' | 'UTOPIA' | NULL
 );
 
 CREATE INDEX idx_preset_outcome ON games(preset, outcome);
+CREATE INDEX idx_created_at ON games(created_at);
+CREATE INDEX idx_status ON games(status);
 ```
 
-Note: Each turn creates a NEW snapshot (append-only). Old snapshots remain
+Note: Each operation creates a NEW snapshot (append-only). Old snapshots remain
 accessible for sharing mid-game states. The `state` JSON contains the full
-event log up to that point.
+event log up to that point. When status='reserved', state is NULL (generation
+in progress).
 
 ### ID Format
 
@@ -394,78 +438,93 @@ interface SummaryResponse {
 }
 ```
 
-### Streaming Format (Vercel AI SDK `streamObject`)
+### Streaming Format (NDJSON with Vercel AI SDK `streamObject`)
 
 **Full streaming flow:**
 ```
 ┌──────────┐         ┌──────────┐         ┌──────────┐
 │ Frontend │ ◀─────▶ │  Worker  │ ◀─────▶ │   LLM    │
 │          │         │          │         │ (Claude) │
-│ useObject│ stream  │streamObj │ stream  │          │
-│   hook   │ ──────▶ │  +pipe   │ ◀────── │          │
+│ generate │ NDJSON  │streamObj │ stream  │          │
+│   API    │ ◀────── │  +pipe   │ ◀────── │          │
 └──────────┘         └──────────┘         └──────────┘
-     ▲                    │
-     │                    │ X-New-Snapshot header
+     │                    │
+     │                    │ X-Snapshot header (new ID)
      └────────────────────┘
 ```
 
 - **Worker→LLM:** `streamObject()` calls LLM, streams response
-- **Worker→Frontend:** `toTextStreamResponse()` pipes stream through
-- Worker adds `X-New-Snapshot` header, otherwise just passes stream
-- **Frontend:** `useObject()` hook parses stream, provides growing `object`
+- **Worker→Frontend:** Pipes partial objects as NDJSON (one JSON per line)
+- Worker adds `X-Snapshot` header with the reserved snapshot ID
+- **Frontend:** Parses NDJSON stream, updates UI with partial objects
 
 **Pattern:** "Growing object" — the response is a single JSON object that builds up
-as tokens stream in. Vercel AI SDK handles parsing and Zod validation.
+as tokens stream in. Vercel AI SDK handles LLM streaming and Zod validation.
 
 ```typescript
 // Worker side (simplified)
 import { streamObject } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 
-export async function handleVote(snapshot: string, choices: VoteChoices) {
-  const gameState = await loadGame(snapshot);
-  const prompt = buildPrompt(gameState, choices);
+export async function streamTurnResponse(state: GameState, env: LLMEnv) {
+  const prompt = buildPrompt(state);
 
-  const result = await streamObject({
+  return streamObject({
     model: anthropic('claude-sonnet-4-20250514'),
     schema: TurnResponseSchema,  // Zod schema
     prompt,
   });
-
-  // Returns a streaming Response
-  return result.toTextStreamResponse();
 }
+
+// In request handler:
+const streamResult = await streamTurnResponse(state, env);
+const newSnapshot = generateSnapshotId();
+await reserveSnapshot(db, newSnapshot, state.preset);
+
+// Pipe partial objects as NDJSON
+for await (const partial of streamResult.partialObjectStream) {
+  writer.write(JSON.stringify(partial) + '\n');
+}
+
+// When complete, finalize snapshot
+const fullResponse = await streamResult.object;
+await finalizeLLMTurn(db, newSnapshot, state, fullResponse);
 ```
 
 ```typescript
 // Client side (simplified)
-import { experimental_useObject as useObject } from '@ai-sdk/react';
-
-function GameView({ snapshot }: { snapshot: string }) {
-  const { object, isLoading } = useObject({
-    api: `/api/game/${snapshot}/vote`,
-    schema: TurnResponseSchema,
+export async function generate(
+  sourceSnapshot: string,
+  callbacks: {
+    onPartial?: (partial: Partial<TurnResponse>) => void;
+    onComplete: (response: TurnResponse | SummaryResponse) => void;
+    onError: (error: Error) => void;
+  }
+): Promise<string> {
+  const response = await fetch(`/api/game/${sourceSnapshot}/generate`, {
+    method: 'POST',
   });
 
-  // object grows as tokens arrive:
-  // { events: [{ type: 'news', headline: 'Go...' }] }
-  // { events: [{ type: 'news', headline: 'Google announces...' }] }
-  // { events: [...], vote: { topics: [...] } }
+  const newSnapshot = response.headers.get('X-Snapshot')!;
+  const reader = response.body!.getReader();
 
-  return (
-    <NewsTab events={object?.events ?? []} />
-  );
+  // Parse NDJSON stream
+  for await (const line of readLines(reader)) {
+    const partial = JSON.parse(line);
+    callbacks.onPartial?.(partial);
+  }
+
+  // Final object is the last partial
+  callbacks.onComplete(lastPartial);
+  return newSnapshot;
 }
 ```
 
-**Why this over NDJSON:**
-- Standard solution — Vercel AI SDK handles all streaming complexity
-- Zod validation built-in — partial objects are type-safe
-- React hooks included — `useObject` handles state updates
-- Works with multiple providers — Anthropic, OpenAI, Google
-
-**Fallback:** If Vercel AI SDK doesn't work with Cloudflare Workers,
-fall back to manual NDJSON streaming (split on newlines, parse each line).
+**Why NDJSON:**
+- Works natively with Cloudflare Workers
+- Simple to implement — just JSON.parse each line
+- Allows partial UI updates as content streams in
+- Vercel AI SDK handles LLM-side streaming
 
 ### Caching
 
@@ -478,53 +537,66 @@ fall back to manual NDJSON streaming (split on newlines, parse each line).
 
 ## Data Flow
 
-### Create Game
+### Create Game + Initial Generation
 
 ```
-Browser                    Worker                     Storage
-   │                          │                          │
-   │  POST /api/game/create   │                          │
-   │─────────────────────────▶│                          │
-   │                          │  Roll preset             │
-   │                          │  Generate snapshot hash  │
-   │                          │  Create initial state    │
-   │                          │                          │
-   │                          │  INSERT game             │
-   │                          │─────────────────────────▶│
-   │                          │                          │
-   │  { snapshot: "abc123" }  │                          │
-   │◀─────────────────────────│                          │
-   │                          │                          │
-   │  Navigate to /?snapshot=abc123                      │
+Browser                    Worker                     Storage       LLM API
+   │                          │                          │              │
+   │  POST /api/game/create   │                          │              │
+   │─────────────────────────▶│                          │              │
+   │                          │  Roll preset             │              │
+   │                          │  Generate snapshot A     │              │
+   │                          │  Create initial state    │              │
+   │                          │                          │              │
+   │                          │  INSERT game (exists)    │              │
+   │                          │─────────────────────────▶│              │
+   │                          │                          │              │
+   │  { snapshot: "A" }       │                          │              │
+   │◀─────────────────────────│                          │              │
+   │                          │                          │              │
+   │  POST /api/game/A/generate                          │              │
+   │─────────────────────────▶│                          │              │
+   │                          │  Reserve snapshot B      │              │
+   │                          │─────────────────────────▶│              │
+   │                          │                          │              │
+   │  X-Snapshot: B           │  Stream request          │              │
+   │  Stream: partial JSON    │─────────────────────────────────────────▶│
+   │◀─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│◀ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
+   │                          │                          │              │
+   │                          │  Finalize B (exists)     │              │
+   │                          │─────────────────────────▶│              │
+   │                          │                          │              │
+   │  Navigate to /?snapshot=B                           │              │
 ```
 
-### Game Turn
+### Player Vote + LLM Generation
 
 ```
-Browser                    Worker                     LLM API
-   │                          │                          │
-   │  POST /api/game/:snapshot/vote                      │
-   │  { choices: {...} }      │                          │
-   │─────────────────────────▶│                          │
-   │                          │                          │
-   │                          │  Validate choices        │
-   │                          │  Build prompt            │
-   │                          │                          │
-   │                          │  Stream request          │
-   │                          │─────────────────────────▶│
-   │                          │                          │
-   │                          │  Stream response         │
-   │  SSE: NewsEvent          │◀ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
-   │◀─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│                          │
-   │                          │                          │
-   │  SSE: NewsEvent          │◀ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
-   │◀─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│                          │
-   │                          │                          │
-   │  SSE: VoteEvent          │◀ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
-   │◀─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│                          │
-   │                          │                          │
-   │                          │  Update state in DB      │
-   │                          │─────────────────────────▶│
+Browser                    Worker                     Storage       LLM API
+   │                          │                          │              │
+   │  POST /api/game/B/submit │                          │              │
+   │  { choices: {...} }      │                          │              │
+   │─────────────────────────▶│                          │              │
+   │                          │  Validate choices        │              │
+   │                          │  Create snapshot C       │              │
+   │                          │─────────────────────────▶│              │
+   │                          │                          │              │
+   │  { snapshot: "C" }       │                          │              │
+   │◀─────────────────────────│                          │              │
+   │                          │                          │              │
+   │  POST /api/game/C/generate                          │              │
+   │─────────────────────────▶│                          │              │
+   │                          │  Reserve snapshot D      │              │
+   │                          │─────────────────────────▶│              │
+   │                          │                          │              │
+   │  X-Snapshot: D           │  Stream request          │              │
+   │  Stream: partial JSON    │─────────────────────────────────────────▶│
+   │◀─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│◀ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
+   │                          │                          │              │
+   │                          │  Finalize D (exists)     │              │
+   │                          │─────────────────────────▶│              │
+   │                          │                          │              │
+   │  Navigate to /?snapshot=D                           │              │
 ```
 
 ---

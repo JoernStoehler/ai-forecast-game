@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import type { GameState, StoredGame, TurnResponse, VoteChoices, GameEvent } from '../src/types/game';
+import type { GameState, TurnResponse, SummaryResponse, VoteChoices, GameEvent } from '../src/types/game';
 import { CURRENT_VERSION, createInitialState, GameStateSchema } from '../src/types/game';
 
 // Generate a 6-character alphanumeric snapshot ID
@@ -17,66 +17,69 @@ export interface Database {
   };
 }
 
+// Snapshot status in DB
+export type SnapshotStatus = 'reserved' | 'exists' | 'failed';
+
+export interface LoadResult {
+  status: SnapshotStatus;
+  state: GameState | null;
+}
+
+// Create a new game (initial snapshot, needs /generate)
 export async function createGame(
   db: Database,
   preset: string
-): Promise<{ snapshot: string; state: GameState }> {
+): Promise<string> {
   const snapshot = generateSnapshotId();
   const state = createInitialState(preset, snapshot);
 
-  const stored: Omit<StoredGame, 'created_at'> = {
-    version: CURRENT_VERSION,
-    snapshot,
-    preset,
-    state,
-    ended_at: null,
-    outcome: null,
-  };
-
   await db
     .prepare(
-      `INSERT INTO games (snapshot, version, preset, state, ended_at, outcome)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO games (snapshot, version, preset, state, status)
+       VALUES (?, ?, ?, ?, 'exists')`
     )
-    .bind(
-      snapshot,
-      CURRENT_VERSION,
-      preset,
-      JSON.stringify(state),
-      null,
-      null
-    )
+    .bind(snapshot, CURRENT_VERSION, preset, JSON.stringify(state))
     .run();
 
-  return { snapshot, state };
+  return snapshot;
 }
 
-export async function loadGame(
+// Load a snapshot
+export async function loadSnapshot(
   db: Database,
   snapshot: string
-): Promise<GameState | { error: string }> {
+): Promise<LoadResult | null> {
   const row = await db
-    .prepare('SELECT version, state FROM games WHERE snapshot = ?')
+    .prepare('SELECT version, state, status FROM games WHERE snapshot = ?')
     .bind(snapshot)
-    .first<{ version: number; state: string }>();
+    .first<{ version: number; state: string | null; status: SnapshotStatus }>();
 
   if (!row) {
-    return { error: 'Game not found' };
+    return null; // unknown
   }
 
+  if (row.status === 'reserved') {
+    return { status: 'reserved', state: null };
+  }
+
+  if (row.status === 'failed') {
+    return { status: 'failed', state: null };
+  }
+
+  // status === 'exists'
   if (row.version !== CURRENT_VERSION) {
-    return { error: 'Game version outdated. Please start a new game.' };
+    return { status: 'failed', state: null }; // treat outdated as failed
   }
 
   try {
-    const state = JSON.parse(row.state);
-    return GameStateSchema.parse(state);
+    const state = JSON.parse(row.state!);
+    return { status: 'exists', state: GameStateSchema.parse(state) };
   } catch {
-    return { error: 'Invalid game state' };
+    return { status: 'failed', state: null };
   }
 }
 
-// Save player's turn (instant operation - just adds voteChoices event)
+// Save player's turn (instant, creates complete snapshot)
 export async function savePlayerTurn(
   db: Database,
   newSnapshot: string,
@@ -92,44 +95,49 @@ export async function savePlayerTurn(
     snapshot: newSnapshot,
     preset: oldState.preset,
     events: newEvents,
-    phase: oldState.phase, // Phase unchanged until LLM responds
-    date: oldState.date,   // Date unchanged until LLM responds
+    phase: oldState.phase,
+    date: oldState.date,
     isGameOver: false,
   };
 
   await db
     .prepare(
-      `INSERT INTO games (snapshot, version, preset, state, ended_at, outcome)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO games (snapshot, version, preset, state, status)
+       VALUES (?, ?, ?, ?, 'exists')`
     )
-    .bind(
-      newSnapshot,
-      CURRENT_VERSION,
-      oldState.preset,
-      JSON.stringify(newState),
-      null,
-      null
-    )
+    .bind(newSnapshot, CURRENT_VERSION, oldState.preset, JSON.stringify(newState))
     .run();
 
   return newState;
 }
 
-// Save LLM's turn (after streaming completes)
-export async function saveLLMTurn(
+// Reserve a snapshot ID for LLM generation
+export async function reserveSnapshot(
   db: Database,
-  newSnapshot: string,
+  snapshot: string,
+  preset: string
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO games (snapshot, version, preset, state, status)
+       VALUES (?, ?, ?, NULL, 'reserved')`
+    )
+    .bind(snapshot, CURRENT_VERSION, preset)
+    .run();
+}
+
+// Finalize LLM turn (news + vote or gameOver)
+export async function finalizeLLMTurn(
+  db: Database,
+  snapshot: string,
   oldState: GameState,
   turnResponse: TurnResponse
 ): Promise<GameState> {
-  // Build new events array (oldState already has voteChoices from player turn)
   const newEvents: GameEvent[] = [
     ...oldState.events,
-    // Add the new news events
     ...turnResponse.events,
   ];
 
-  // Add vote event if present
   if (turnResponse.vote) {
     newEvents.push({
       type: 'vote' as const,
@@ -137,7 +145,6 @@ export async function saveLLMTurn(
     });
   }
 
-  // Add game over event if present
   if (turnResponse.gameOver) {
     newEvents.push({
       type: 'gameOver' as const,
@@ -145,12 +152,11 @@ export async function saveLLMTurn(
     });
   }
 
-  // Calculate new date from the last news event
   const lastNewsEvent = [...turnResponse.events].reverse().find(e => e.type === 'news');
   const newDate = lastNewsEvent ? lastNewsEvent.date : oldState.date;
 
   const newState: GameState = {
-    snapshot: newSnapshot,
+    snapshot,
     preset: oldState.preset,
     events: newEvents,
     phase: turnResponse.phase,
@@ -163,18 +169,78 @@ export async function saveLLMTurn(
 
   await db
     .prepare(
-      `INSERT INTO games (snapshot, version, preset, state, ended_at, outcome)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `UPDATE games SET state = ?, status = 'exists', ended_at = ?, outcome = ?
+       WHERE snapshot = ?`
     )
-    .bind(
-      newSnapshot,
-      CURRENT_VERSION,
-      oldState.preset,
-      JSON.stringify(newState),
-      endedAt,
-      outcome
-    )
+    .bind(JSON.stringify(newState), endedAt, outcome, snapshot)
     .run();
 
   return newState;
+}
+
+// Finalize summary generation
+export async function finalizeSummary(
+  db: Database,
+  snapshot: string,
+  oldState: GameState,
+  summaryResponse: SummaryResponse
+): Promise<GameState> {
+  // Add summary to state (stored in a summary field, not as an event)
+  const newState: GameState = {
+    ...oldState,
+    snapshot,
+    summary: summaryResponse,
+  };
+
+  await db
+    .prepare(
+      `UPDATE games SET state = ?, status = 'exists'
+       WHERE snapshot = ?`
+    )
+    .bind(JSON.stringify(newState), snapshot)
+    .run();
+
+  return newState;
+}
+
+// Mark snapshot as failed
+export async function failSnapshot(
+  db: Database,
+  snapshot: string
+): Promise<void> {
+  await db
+    .prepare(`UPDATE games SET status = 'failed' WHERE snapshot = ?`)
+    .bind(snapshot)
+    .run();
+}
+
+// Determine whose turn it is based on state
+export type TurnType = 'llm' | 'player' | 'summary' | 'done';
+
+export function getWhoseTurn(state: GameState): TurnType {
+  if (state.events.length === 0) {
+    return 'llm'; // Fresh game needs initial generation
+  }
+
+  // Check if we have a summary already
+  if ('summary' in state && state.summary) {
+    return 'done';
+  }
+
+  if (state.isGameOver) {
+    return 'summary'; // Game over but no summary yet
+  }
+
+  const lastEvent = state.events[state.events.length - 1];
+
+  if (lastEvent.type === 'voteChoices') {
+    return 'llm';
+  }
+
+  if (lastEvent.type === 'vote') {
+    return 'player';
+  }
+
+  // Shouldn't happen in normal flow
+  return 'llm';
 }

@@ -61,6 +61,7 @@ export const GameStateSchema = z.object({
   phase: z.string(),
   date: DateSchema,
   isGameOver: z.boolean(),
+  summary: z.lazy(() => SummaryResponseSchema).optional(),
 });
 
 // === Turn Response (from LLM) ===

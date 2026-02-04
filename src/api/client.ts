@@ -1,34 +1,21 @@
 import type { GameState, VoteChoices, TurnResponse, SummaryResponse } from '../types/game';
 import { GameStateSchema, TurnResponseSchema, SummaryResponseSchema } from '../types/game';
 
-const API_BASE = import.meta.env.DEV
-  ? 'http://localhost:8787'
-  : '';
+const API_BASE = import.meta.env.DEV ? 'http://localhost:8787' : '';
 
-export type SnapshotStatus = 'awaiting_llm' | 'complete';
+// === Response types ===
 
-export interface CreateGameResponse {
-  snapshot: string;
-  state: GameState;
-  status: SnapshotStatus;
-}
+export type LoadResult =
+  | { status: 'exists'; state: GameState }
+  | { status: 'generating' }
+  | { status: 'unknown' }
+  | { status: 'failed' };
 
-export interface LoadGameResponse {
-  state: GameState;
-  status: SnapshotStatus;
-}
+// === API functions ===
 
-export interface SubmitTurnResponse {
-  snapshot: string;
-  state: GameState;
-  status: 'awaiting_llm';
-}
-
-// POST /api/game/create - Create new game
-export async function createGame(): Promise<CreateGameResponse> {
-  const response = await fetch(`${API_BASE}/api/game/create`, {
-    method: 'POST',
-  });
+// POST /api/game/create
+export async function createGame(): Promise<string> {
+  const response = await fetch(`${API_BASE}/api/game/create`, { method: 'POST' });
 
   if (!response.ok) {
     const error = await response.json();
@@ -36,75 +23,71 @@ export async function createGame(): Promise<CreateGameResponse> {
   }
 
   const data = await response.json();
-  return {
-    snapshot: data.snapshot,
-    state: GameStateSchema.parse(data.state),
-    status: data.status,
-  };
+  return data.snapshot;
 }
 
-// GET /api/game/:snapshot - Load game state
-export async function loadGame(snapshot: string): Promise<LoadGameResponse> {
-  const response = await fetch(`${API_BASE}/api/game/${snapshot}`);
+// GET /api/game/:id
+export async function loadSnapshot(id: string): Promise<LoadResult> {
+  const response = await fetch(`${API_BASE}/api/game/${id}`);
+
+  if (response.status === 404) {
+    return { status: 'unknown' };
+  }
+
+  if (response.status === 202) {
+    return { status: 'generating' };
+  }
+
+  if (response.status === 410) {
+    return { status: 'failed' };
+  }
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to load game');
+    throw new Error('Failed to load snapshot');
   }
 
   const data = await response.json();
-  return {
-    state: GameStateSchema.parse(data.state),
-    status: data.status,
-  };
+  return { status: 'exists', state: GameStateSchema.parse(data.state) };
 }
 
-// POST /api/game/:snapshot/turn - Submit player choices (instant)
-export async function submitTurn(
-  snapshot: string,
-  choices: VoteChoices
-): Promise<SubmitTurnResponse> {
-  const response = await fetch(`${API_BASE}/api/game/${snapshot}/turn`, {
+// POST /api/game/:id/submit
+export async function submitVote(id: string, choices: VoteChoices): Promise<string> {
+  const response = await fetch(`${API_BASE}/api/game/${id}/submit`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ choices }),
   });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error || 'Failed to submit turn');
+    throw new Error(error.error || 'Failed to submit vote');
   }
 
   const data = await response.json();
-  return {
-    snapshot: data.snapshot,
-    state: GameStateSchema.parse(data.state),
-    status: 'awaiting_llm',
-  };
+  return data.snapshot;
 }
 
-// Stream processing callbacks
-export interface StreamCallbacks {
-  onPartial: (partial: Partial<TurnResponse>) => void;
-  onComplete: (response: TurnResponse, newSnapshot: string) => void;
+// === Streaming ===
+
+export interface GenerateCallbacks {
+  onPartial: (partial: Partial<TurnResponse | SummaryResponse>) => void;
+  onComplete: (response: TurnResponse | SummaryResponse) => void;
   onError: (error: Error) => void;
 }
 
-// GET /api/game/:snapshot/stream - Stream LLM generation
-export async function streamLLMGeneration(
-  snapshot: string,
-  callbacks: StreamCallbacks
-): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/game/${snapshot}/stream`);
+// POST /api/game/:id/generate
+export async function generate(
+  id: string,
+  callbacks: GenerateCallbacks
+): Promise<string> {
+  const response = await fetch(`${API_BASE}/api/game/${id}/generate`, { method: 'POST' });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error || 'Failed to start stream');
+    throw new Error(error.error || 'Failed to start generation');
   }
 
-  const newSnapshot = response.headers.get('X-New-Snapshot');
+  const newSnapshot = response.headers.get('X-Snapshot');
   if (!newSnapshot) {
     throw new Error('Missing snapshot in response');
   }
@@ -116,17 +99,15 @@ export async function streamLLMGeneration(
 
   const decoder = new TextDecoder();
   let buffer = '';
-  let lastValidResponse: TurnResponse | null = null;
+  let lastValidResponse: TurnResponse | SummaryResponse | null = null;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Process complete lines (NDJSON)
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
@@ -138,12 +119,18 @@ export async function streamLLMGeneration(
 
           if (partial.error) {
             callbacks.onError(new Error(partial.error));
-            return;
+            return newSnapshot;
           }
 
-          const parseResult = TurnResponseSchema.safeParse(partial);
-          if (parseResult.success) {
-            lastValidResponse = parseResult.data;
+          // Try to validate as TurnResponse or SummaryResponse
+          const turnResult = TurnResponseSchema.safeParse(partial);
+          if (turnResult.success) {
+            lastValidResponse = turnResult.data;
+          } else {
+            const summaryResult = SummaryResponseSchema.safeParse(partial);
+            if (summaryResult.success) {
+              lastValidResponse = summaryResult.data;
+            }
           }
 
           callbacks.onPartial(partial);
@@ -153,98 +140,18 @@ export async function streamLLMGeneration(
       }
     }
 
-    // Process any remaining buffer
+    // Process remaining buffer
     if (buffer.trim()) {
       try {
         const partial = JSON.parse(buffer);
-        const parseResult = TurnResponseSchema.safeParse(partial);
-        if (parseResult.success) {
-          lastValidResponse = parseResult.data;
-        }
-        callbacks.onPartial(partial);
-      } catch {
-        // Ignore
-      }
-    }
-
-    if (lastValidResponse) {
-      callbacks.onComplete(lastValidResponse, newSnapshot);
-    } else {
-      callbacks.onError(new Error('No valid response received'));
-    }
-  } catch (error) {
-    callbacks.onError(error instanceof Error ? error : new Error('Stream error'));
-  }
-}
-
-// Summary stream callbacks
-export interface SummaryStreamCallbacks {
-  onPartial: (partial: Partial<SummaryResponse>) => void;
-  onComplete: (response: SummaryResponse) => void;
-  onError: (error: Error) => void;
-}
-
-// GET /api/game/:snapshot/summary - Stream post-game summary
-export async function streamSummary(
-  snapshot: string,
-  callbacks: SummaryStreamCallbacks
-): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/game/${snapshot}/summary`);
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to fetch summary');
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error('No response body');
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let lastValidResponse: SummaryResponse | null = null;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
-        try {
-          const partial = JSON.parse(line);
-
-          if (partial.error) {
-            callbacks.onError(new Error(partial.error));
-            return;
+        const turnResult = TurnResponseSchema.safeParse(partial);
+        if (turnResult.success) {
+          lastValidResponse = turnResult.data;
+        } else {
+          const summaryResult = SummaryResponseSchema.safeParse(partial);
+          if (summaryResult.success) {
+            lastValidResponse = summaryResult.data;
           }
-
-          const parseResult = SummaryResponseSchema.safeParse(partial);
-          if (parseResult.success) {
-            lastValidResponse = parseResult.data;
-          }
-
-          callbacks.onPartial(partial);
-        } catch {
-          // Ignore parse errors
-        }
-      }
-    }
-
-    if (buffer.trim()) {
-      try {
-        const partial = JSON.parse(buffer);
-        const parseResult = SummaryResponseSchema.safeParse(partial);
-        if (parseResult.success) {
-          lastValidResponse = parseResult.data;
         }
         callbacks.onPartial(partial);
       } catch {
@@ -255,9 +162,39 @@ export async function streamSummary(
     if (lastValidResponse) {
       callbacks.onComplete(lastValidResponse);
     } else {
-      callbacks.onError(new Error('No valid summary received'));
+      callbacks.onError(new Error('No valid response received'));
     }
   } catch (error) {
     callbacks.onError(error instanceof Error ? error : new Error('Stream error'));
   }
+
+  return newSnapshot;
+}
+
+// Poll for snapshot until it exists
+export async function pollUntilReady(
+  id: string,
+  maxAttempts = 60,
+  intervalMs = 1000
+): Promise<GameState> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const result = await loadSnapshot(id);
+
+    if (result.status === 'exists') {
+      return result.state;
+    }
+
+    if (result.status === 'failed') {
+      throw new Error('Generation failed');
+    }
+
+    if (result.status === 'unknown') {
+      throw new Error('Unknown snapshot');
+    }
+
+    // status === 'generating', wait and retry
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error('Timeout waiting for snapshot');
 }
