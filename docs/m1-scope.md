@@ -38,9 +38,9 @@ Set up a working project structure that can render the UI and make LLM calls. No
 
 ### 2. Cloudflare Setup
 - [x] Worker project in `/worker`
-- [ ] `wrangler.toml` configured (needs credentials)
+- [x] `wrangler.toml` configured
 - [x] D1 database schema (snapshots table)
-- [ ] Local dev with Miniflare (needs credentials)
+- [x] D1 migrations applied to remote
 
 ### 3. Frontend Components (Skeleton)
 

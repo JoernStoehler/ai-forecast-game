@@ -72,13 +72,14 @@ npx playwright screenshot http://localhost:5173 /tmp/screenshot.png
 
 **Testing deployments**: Test from your own browser or local dev environment. CC web browsers cannot reach external URLs.
 
+## Ready (Cloudflare)
+- wrangler configured (credentials in environment)
+- D1 database created and migrations applied
+- Run `npx wrangler d1 migrations apply ai-forecast-game-db --remote` after adding new migrations
+
 ## Needs Setup
-- wrangler
-  - [ ] create .env from .env.example with CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
-  - [ ] `wrangler d1 create ai-forecast-game-db` → copy database_id to wrangler.toml
-  - [ ] configure subdomain in Cloudflare dashboard, update wrangler.toml routes
 - ci/cd
   - [ ] add CLOUDFLARE_API_TOKEN to GitHub repo secrets
   - [ ] add CLOUDFLARE_ACCOUNT_ID to GitHub repo secrets
-- d1 database
-  - [ ] write migrations in migrations/
+- custom domain
+  - [ ] configure subdomain in Cloudflare dashboard, update wrangler.toml routes
