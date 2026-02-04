@@ -1,20 +1,34 @@
 # Setup Status
 
 ## Smoke Test
+
+### Local devcontainer
 First run: `npm install` (generates package-lock.json), then:
 ```bash
 npm ci && npm run build && npm test && npx playwright install && npm run test:e2e
 ```
-TODO: run in container, update this section with failures
 
-## Ready
-- devcontainer (node 22, playwright, puppeteer, cli tools)
+### Claude Code web
+```bash
+npm run setup:ccweb && npm run build && npm test && npm run test:e2e
+```
+Note: Playwright browsers are pre-installed on CC web (pinned to v1.56.1).
+
+## Ready (local devcontainer)
+- devcontainer (node 22, playwright, cli tools)
 - vite + react + typescript
 - vitest + @testing-library/react
 - playwright e2e
 - gh cli (auth via mount)
 - claude code (auth via mount)
 - vscode tunnel (auth via mount)
+
+## Ready (Claude Code web)
+- node 22, playwright 1.56.1 with browsers pre-installed
+- vite + react + typescript
+- vitest + @testing-library/react
+- playwright e2e
+- gh cli (installed via `npm run setup:ccweb`)
 
 ## Needs Setup
 - wrangler
