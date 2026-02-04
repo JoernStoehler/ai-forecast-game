@@ -186,12 +186,13 @@ GET /api/game/:snapshot
 
 POST /api/game/:snapshot/vote
   Request: { choices: VoteChoices }  -- Zod-validated
-  Response: NDJSON stream
-    - Multiple NewsEvent (some may have isHidden: true)
-    - Final event: VoteEvent OR GameOverEvent
+  Response: Streaming TurnResponse (growing object via Vercel AI SDK)
+    - Object builds up as tokens arrive
+    - Final shape: { events: [...], vote?: {...}, gameOver?: {...}, phase }
   Headers:
-    Content-Type: application/x-ndjson
+    Content-Type: text/plain; charset=utf-8  (AI SDK default)
     Transfer-Encoding: chunked
+    X-New-Snapshot: abc456  -- New snapshot hash, client updates URL
 
 GET /api/game/:snapshot/summary
   Response: { summary: SummaryData }
@@ -353,61 +354,60 @@ interface SummaryResponse {
 }
 ```
 
-### Streaming Format (NDJSON)
+### Streaming Format (Vercel AI SDK `streamObject`)
 
-**Protocol:** Newline-Delimited JSON (NDJSON) over chunked HTTP response.
-
-```
-Content-Type: application/x-ndjson
-
-{"type":"news","date":{"year":2026,"month":3},"headline":"..."}
-{"type":"news","date":{"year":2026,"month":4},"headline":"..."}
-{"type":"vote","topics":[...]}
-```
-
-**Rules:**
-- Each line is one complete JSON object (GameEvent)
-- Lines separated by `\n`
-- Stream ends when response closes (no explicit terminator)
-- Final event is always `vote` or `gameOver`
-- Client validates each event with Zod before processing
-
-**Why NDJSON over SSE:**
-- Simpler parsing (split on newlines, parse each line)
-- No event type prefixing needed
-- Works with standard fetch streaming
-- Better library support (e.g., `ndjson-parse`)
+**Pattern:** "Growing object" — the response is a single JSON object that builds up
+as tokens stream in. Vercel AI SDK handles parsing and Zod validation.
 
 ```typescript
-// Client-side streaming handler (simplified)
-async function* streamEvents(snapshot: string, choices: VoteChoices) {
-  const response = await fetch(`/api/game/${snapshot}/vote`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ choices }),
+// Worker side (simplified)
+import { streamObject } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+
+export async function handleVote(snapshot: string, choices: VoteChoices) {
+  const gameState = await loadGame(snapshot);
+  const prompt = buildPrompt(gameState, choices);
+
+  const result = await streamObject({
+    model: anthropic('claude-sonnet-4-20250514'),
+    schema: TurnResponseSchema,  // Zod schema
+    prompt,
   });
 
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop()!;  // Keep incomplete line in buffer
-
-    for (const line of lines) {
-      if (line.trim()) {
-        const event = GameEventSchema.parse(JSON.parse(line));
-        yield event;
-      }
-    }
-  }
+  // Returns a streaming Response
+  return result.toTextStreamResponse();
 }
 ```
+
+```typescript
+// Client side (simplified)
+import { experimental_useObject as useObject } from '@ai-sdk/react';
+
+function GameView({ snapshot }: { snapshot: string }) {
+  const { object, isLoading } = useObject({
+    api: `/api/game/${snapshot}/vote`,
+    schema: TurnResponseSchema,
+  });
+
+  // object grows as tokens arrive:
+  // { events: [{ type: 'news', headline: 'Go...' }] }
+  // { events: [{ type: 'news', headline: 'Google announces...' }] }
+  // { events: [...], vote: { topics: [...] } }
+
+  return (
+    <NewsTab events={object?.events ?? []} />
+  );
+}
+```
+
+**Why this over NDJSON:**
+- Standard solution — Vercel AI SDK handles all streaming complexity
+- Zod validation built-in — partial objects are type-safe
+- React hooks included — `useObject` handles state updates
+- Works with multiple providers — Anthropic, OpenAI, Google
+
+**Fallback:** If Vercel AI SDK doesn't work with Cloudflare Workers,
+fall back to manual NDJSON streaming (split on newlines, parse each line).
 
 ### Caching
 
