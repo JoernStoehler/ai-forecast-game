@@ -8,10 +8,28 @@ Set up a working project structure that can render the UI and make LLM calls. No
 ## Deliverables
 
 ### 1. Project Setup
-- [ ] Vite + React + TypeScript project
-- [ ] Vitest configured
-- [ ] ESLint / Prettier (standard config)
-- [ ] `.env.example` for API keys
+- [x] Vite + React + TypeScript project
+- [x] Vitest configured
+- [x] ESLint / Prettier (standard config)
+- [x] `.env.example` for API keys
+
+### Dependencies (with rationale)
+
+| Package | Purpose | Why this one |
+|---------|---------|--------------|
+| **react 18** | UI framework | Standard, stable API since 2022 |
+| **vite 6** | Build tool | Fast, good DX, works with Cloudflare |
+| **vitest** | Unit tests | Vite-native, drop-in Jest replacement |
+| **playwright** | E2E tests | More reliable than Puppeteer, better CI support |
+| **zod** | Schema validation | Most popular TS validation lib, great inference |
+| **lucide-react** | Icons | Tree-shakeable, consistent with shadcn/ui |
+| **nanoid** | ID generation | Standard, small, configurable alphabet |
+| **@anthropic-ai/sdk** | LLM client | Official SDK, streaming support |
+
+**Not using:**
+- Redux/Zustand — overkill for this scale, React context sufficient
+- Tailwind — adds build complexity, plain CSS modules fine for M1
+- tRPC — overkill, simple fetch + Zod validation enough
 
 ### 2. Cloudflare Setup
 - [ ] Worker project in `/worker`
@@ -52,8 +70,8 @@ Set up a working project structure that can render the UI and make LLM calls. No
 - [ ] `POST /api/game/:snapshot/vote` — validate choices, call LLM, return new snapshot
 
 **Storage:**
-- [ ] D1 table: `snapshots (hash TEXT PRIMARY KEY, state JSON, created_at TIMESTAMP)`
-- [ ] Generate 6-char alphanumeric hash
+- [ ] D1 table: `games (snapshot TEXT PRIMARY KEY, preset TEXT, state JSON, created_at, ended_at, outcome)`
+- [ ] Generate 6-char alphanumeric hash via nanoid
 
 ### 6. LLM Integration (Minimal)
 - [ ] LLM client abstraction (Gemini / Claude / OpenAI switchable)

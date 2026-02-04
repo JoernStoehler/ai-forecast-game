@@ -69,19 +69,90 @@
 
 Simple React state + context. No Redux/Zustand needed for this scale.
 
+### Type Definitions (Zod schemas at API boundaries)
+
 ```typescript
-interface GameState {
-  snapshot: string | null;
-  events: GameEvent[];      // Append-only log
-  phase: string;
-  date: { year: number; month: number };
-  currentVote: VoteEvent | null;
-  isGameOver: boolean;
+import { z } from 'zod';
+
+// === Date ===
+const DateSchema = z.object({
+  year: z.number(),
+  month: z.number().min(1).max(12),
+});
+
+// === Events ===
+const NewsEventSchema = z.object({
+  type: z.literal('news'),
+  date: DateSchema,
+  headline: z.string(),
+  description: z.string().optional(),
+  isHidden: z.boolean().optional(),  // Hidden until post-game reveal
+});
+
+const TopicOptionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string().optional(),
+});
+
+const TopicSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string().optional(),
+  options: z.array(TopicOptionSchema).min(2).max(4),
+});
+
+const VoteEventSchema = z.object({
+  type: z.literal('vote'),
+  topics: z.array(TopicSchema).min(1).max(3),
+});
+
+const VoteChoicesSchema = z.record(z.string(), z.string());
+// Example: { "compute-regulation": "strict-monitoring", "intl-response": "defer" }
+
+const VoteChoicesEventSchema = z.object({
+  type: z.literal('voteChoices'),
+  choices: VoteChoicesSchema,
+});
+
+const GameOverEventSchema = z.object({
+  type: z.literal('gameOver'),
+  outcome: z.enum(['EXTINCTION', 'UTOPIA']),
+});
+
+const GameEventSchema = z.discriminatedUnion('type', [
+  NewsEventSchema,
+  VoteEventSchema,
+  VoteChoicesEventSchema,
+  GameOverEventSchema,
+]);
+
+// === Game State ===
+const GameStateSchema = z.object({
+  snapshot: z.string().nullable(),
+  preset: z.string(),
+  events: z.array(GameEventSchema),
+  phase: z.string(),
+  date: DateSchema,
+  isGameOver: z.boolean(),
+});
+
+// TypeScript types derived from Zod
+type GameEvent = z.infer<typeof GameEventSchema>;
+type NewsEvent = z.infer<typeof NewsEventSchema>;
+type VoteEvent = z.infer<typeof VoteEventSchema>;
+type VoteChoices = z.infer<typeof VoteChoicesSchema>;
+type GameState = z.infer<typeof GameStateSchema>;
+```
+
+### Client-Side UI State (extends GameState)
+
+```typescript
+interface UIState extends GameState {
   isLoading: boolean;
   loadingState: 'none' | 'thinking' | 'typing';
+  currentVote: VoteEvent | null;  // Extracted from last VoteEvent
 }
-
-type GameEvent = NewsEvent | VoteEvent | VoteChoicesEvent | GameOverEvent;
 ```
 
 ### URL Handling
@@ -114,23 +185,24 @@ GET /api/game/:snapshot
   Response: { state: GameState }
 
 POST /api/game/:snapshot/vote
-  Request: { choices: VoteChoices }
-  Response: Streaming (SSE or WebSocket)
-    - Multiple NewsEvent
-    - One VoteEvent OR GameOverEvent
+  Request: { choices: VoteChoices }  -- Zod-validated
+  Response: NDJSON stream
+    - Multiple NewsEvent (some may have isHidden: true)
+    - Final event: VoteEvent OR GameOverEvent
+  Headers:
+    Content-Type: application/x-ndjson
+    Transfer-Encoding: chunked
 
 GET /api/game/:snapshot/summary
   Response: { summary: SummaryData }
   (Called after GameOver for post-game analysis)
 ```
 
-### Storage (D1 or R2)
-
-**Option A: D1 (SQLite)**
+### Storage (D1)
 
 ```sql
 CREATE TABLE games (
-  id TEXT PRIMARY KEY,
+  snapshot TEXT PRIMARY KEY,     -- 6-char alphanumeric hash
   preset TEXT NOT NULL,
   state JSON NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -141,13 +213,9 @@ CREATE TABLE games (
 CREATE INDEX idx_preset_outcome ON games(preset, outcome);
 ```
 
-**Option B: R2 (Object Storage)**
-
-- Key: `games/{id}.json`
-- Value: Full game state as JSON
-- Simpler, but no queries for aggregation
-
-**Recommendation:** D1 for aggregation queries (baseline comparison).
+Note: Each turn creates a NEW snapshot (append-only). Old snapshots remain
+accessible for sharing mid-game states. The `state` JSON contains the full
+event log up to that point.
 
 ### ID Format
 
@@ -267,7 +335,7 @@ interface TurnResponse {
   phase: string;  // Current phase label
 }
 
-// Post-game summary response
+// Post-game summary response (M3+)
 interface SummaryResponse {
   whatHappened: string;  // Prose explanation
   stats: Array<{
@@ -275,35 +343,51 @@ interface SummaryResponse {
     label: string;
     value: string;
   }>;
-  hiddenEvents: Array<{
-    date: { year: number; month: number };
-    headline: string;
-    description: string;
-  }>;
+  // Hidden events are already in GameState.events with isHidden: true
+  // Post-game, frontend reveals them in timeline
   commentary: Array<{
-    targetEventIndex: number;
-    comment: string;
+    targetEventIndex: number;  // Index into GameState.events
+    comment: string;           // "This was the turning point..."
   }>;
   shareText: string;
 }
 ```
 
-### Streaming
+### Streaming Format (NDJSON)
 
-- Use Server-Sent Events (SSE) or streaming fetch
-- Parse JSON incrementally as it arrives
-- News items appear as they're generated
-- Vote object completes the turn
+**Protocol:** Newline-Delimited JSON (NDJSON) over chunked HTTP response.
+
+```
+Content-Type: application/x-ndjson
+
+{"type":"news","date":{"year":2026,"month":3},"headline":"..."}
+{"type":"news","date":{"year":2026,"month":4},"headline":"..."}
+{"type":"vote","topics":[...]}
+```
+
+**Rules:**
+- Each line is one complete JSON object (GameEvent)
+- Lines separated by `\n`
+- Stream ends when response closes (no explicit terminator)
+- Final event is always `vote` or `gameOver`
+- Client validates each event with Zod before processing
+
+**Why NDJSON over SSE:**
+- Simpler parsing (split on newlines, parse each line)
+- No event type prefixing needed
+- Works with standard fetch streaming
+- Better library support (e.g., `ndjson-parse`)
 
 ```typescript
-// Client-side streaming handler
-async function* streamTurn(gameId: string, choices: VoteChoices) {
-  const response = await fetch(`/api/game/${gameId}/vote`, {
+// Client-side streaming handler (simplified)
+async function* streamEvents(snapshot: string, choices: VoteChoices) {
+  const response = await fetch(`/api/game/${snapshot}/vote`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ choices }),
   });
 
-  const reader = response.body.getReader();
+  const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
@@ -312,8 +396,15 @@ async function* streamTurn(gameId: string, choices: VoteChoices) {
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-    // Parse and yield complete JSON objects from buffer
-    // ...
+    const lines = buffer.split('\n');
+    buffer = lines.pop()!;  // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (line.trim()) {
+        const event = GameEventSchema.parse(JSON.parse(line));
+        yield event;
+      }
+    }
   }
 }
 ```
