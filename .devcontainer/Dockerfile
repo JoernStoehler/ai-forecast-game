@@ -67,6 +67,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsecret-1-0 \
     libhyphen0 \
     libmanette-0.2-0 \
+    libgtk-4-1 \
+    libgraphene-1.0-0 \
+    libxslt1.1 \
+    libevent-2.1-7t64 \
+    libopus0 \
+    flite1-dev \
+    libwebpdemux2 \
+    libavif16 \
+    libwebpmux3 \
+    libwayland-server0 \
+    libgles2 \
+    libx264-dev \
     # Shared
     xvfb \
     fonts-liberation \
