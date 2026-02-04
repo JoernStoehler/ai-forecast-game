@@ -1,0 +1,39 @@
+{
+  // Local devcontainer for ai-forecast-game (Jörn's Ubuntu desktop).
+  //
+  // Tech stack: React + Vite, Vitest, Cloudflare Pages/Workers
+  // Browser automation: Playwright, Puppeteer (for testing & Claude Code agents)
+  //
+  // Prerequisites on host:
+  // - /srv/devhome/ directories exist (shared with other devcontainers)
+  // - devcontainer CLI: npm i -g @devcontainers/cli
+  //
+  // Usage from host:
+  //   .devcontainer/host-devcontainer-rebuild.sh
+  //   .devcontainer/host-vscode-tunnel.sh
+  "name": "ai-forecast-game",
+  "dockerFile": "Dockerfile",
+  "workspaceFolder": "/workspaces/ai-forecast-game",
+  "updateRemoteUserUID": true,
+  "features": {},
+  // Memory limit: 8GB RAM + 2GB swap. Browsers can be memory-hungry.
+  // --cap-add=SYS_ADMIN needed for Chromium sandboxing in Playwright/Puppeteer.
+  "runArgs": ["--memory=8g", "--memory-swap=10g", "--cap-add=SYS_ADMIN"],
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "containerEnv": {
+    "DEVCONTAINER_ENV": "local",
+    // Claude Code stores .claude.json at $CLAUDE_CONFIG_DIR (default: $HOME).
+    // Must point inside ~/.claude/ so it's included in the bind mount.
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    // Store VS Code tunnel auth in ~/.vscode-cli instead of system keychain
+    "VSCODE_CLI_USE_FILE_KEYCHAIN": "1"
+  },
+  // Bind mounts: essentials only. Add caches later if rebuilds feel slow.
+  "mounts": [
+    "source=/srv/devhome/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+    "source=/srv/devhome/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached",
+    "source=/srv/devhome/.vscode-cli,target=/home/vscode/.vscode-cli,type=bind,consistency=cached"
+  ],
+  // Forward Vite dev server port
+  "forwardPorts": [5173, 8787]
+}

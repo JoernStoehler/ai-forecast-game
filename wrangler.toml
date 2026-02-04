@@ -1,0 +1,10 @@
+name = "ai-forecast-game-worker"
+main = "worker/index.ts"
+compatibility_date = "2025-02-01"
+
+# Uncomment when ready to deploy
+# [vars]
+# ENVIRONMENT = "production"
+
+# [env.staging]
+# name = "ai-forecast-game-worker-staging"
