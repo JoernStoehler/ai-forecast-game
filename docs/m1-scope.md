@@ -37,54 +37,56 @@ Set up a working project structure that can render the UI and make LLM calls. No
 - tRPC — overkill, simple fetch + Zod validation enough
 
 ### 2. Cloudflare Setup
-- [ ] Worker project in `/worker`
-- [ ] `wrangler.toml` configured
-- [ ] D1 database schema (snapshots table)
-- [ ] Local dev with Miniflare
+- [x] Worker project in `/worker`
+- [ ] `wrangler.toml` configured (needs credentials)
+- [x] D1 database schema (snapshots table)
+- [ ] Local dev with Miniflare (needs credentials)
 
 ### 3. Frontend Components (Skeleton)
 
 **Layout:**
-- [ ] `Header` — date, phase, [New] button
-- [ ] `TabBar` — Tutorial / News / Vote / Summary (show/hide logic)
-- [ ] Responsive: tabs on mobile, side-by-side on desktop
+- [x] `Header` — date, phase, [New] button
+- [x] `TabBar` — Tutorial / News / Vote / Summary (show/hide logic)
+- [x] Responsive: tabs on mobile, side-by-side on desktop
 
 **Tabs:**
-- [ ] `TutorialTab` — landing page with game description + [Start Game]
-- [ ] `NewsTab` — scrollable timeline with year/month markers
-- [ ] `VoteTab` — topic cards with radio buttons + Submit
-- [ ] `SummaryTab` — placeholder for post-game content
+- [x] `TutorialTab` — landing page with game description + [Start Game]
+- [x] `NewsTab` — scrollable timeline with year/month markers
+- [x] `VoteTab` — topic cards with radio buttons + Submit
+- [x] `SummaryTab` — placeholder for post-game content
 
 **Components:**
-- [ ] `NewsItem` — headline + optional description
-- [ ] `TopicCard` — title + options as radio buttons
-- [ ] `SubmitButton` — disabled until all topics selected
-- [ ] `LoadingIndicator` — thinking/typing states
+- [x] `NewsItem` — headline + optional description
+- [x] `TopicCard` — title + options as radio buttons
+- [x] `SubmitButton` — disabled until all topics selected
+- [x] `LoadingIndicator` — thinking/typing states
 
 ### 4. State Management
-- [ ] Game state type definitions
-- [ ] Event types: `News`, `Vote`, `PhaseChange`, `GameOver`
-- [ ] Append-only event log → React state reducer
-- [ ] URL sync with `?snapshot=abc123`
+- [x] Game state type definitions
+- [x] Event types: `News`, `Vote`, `PhaseChange`, `GameOver`
+- [x] Append-only event log → React state reducer
+- [x] URL sync with `?snapshot=abc123`
 
 ### 5. Backend API (Worker)
 
-**Endpoints:**
-- [ ] `POST /api/game/create` — roll preset, return snapshot hash
-- [ ] `GET /api/game/:snapshot` — return game state
-- [ ] `POST /api/game/:snapshot/vote` — validate choices, call LLM, return new snapshot
+**Endpoints (redesigned):**
+- [x] `POST /api/game/create` — roll preset, return snapshot hash
+- [x] `GET /api/game/:id` — return game state (200/202/404/410)
+- [x] `POST /api/game/:id/submit` — persist player choices, return new snapshot
+- [x] `POST /api/game/:id/generate` — LLM turn or summary, streams response
 
 **Storage:**
-- [ ] D1 table: `games (snapshot TEXT PRIMARY KEY, preset TEXT, state JSON, created_at, ended_at, outcome)`
-- [ ] Generate 6-char alphanumeric hash via nanoid
+- [x] D1 table with status column: `games (snapshot, version, preset, state, status, created_at, ended_at, outcome)`
+- [x] Generate 6-char alphanumeric hash via nanoid
 
 ### 6. LLM Integration (Minimal)
-- [ ] LLM client abstraction (Gemini / Claude / OpenAI switchable)
-- [ ] Placeholder rulebook prompt
-- [ ] Streaming response handling
-- [ ] Parse LLM output to event types
+- [x] LLM client abstraction (Vercel AI SDK with Anthropic)
+- [x] Placeholder rulebook prompt
+- [x] Streaming response handling (NDJSON)
+- [x] Parse LLM output to event types (Zod schemas)
 
 ### 7. Prompts (Placeholder)
+- [x] Created placeholder files:
 ```
 /src/prompts/
   rulebook.ts      — placeholder game rules
