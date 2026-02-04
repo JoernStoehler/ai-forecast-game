@@ -1,12 +1,13 @@
 name = "ai-forecast-game"
 main = "worker/index.ts"
 compatibility_date = "2025-02-01"
+pages_build_output_dir = "dist"
 
 # D1 Database
 [[d1_databases]]
 binding = "DB"
 database_name = "ai-forecast-game-db"
-database_id = "" # Fill after: wrangler d1 create ai-forecast-game-db
+database_id = "d4eb1809-eb9f-4be1-bb90-f749573debc7"
 
 # Custom domain (configure in Cloudflare dashboard)
 # routes = [{ pattern = "<tbd>.joernstoehler.com", custom_domain = true }]
