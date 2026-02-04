@@ -356,6 +356,24 @@ interface SummaryResponse {
 
 ### Streaming Format (Vercel AI SDK `streamObject`)
 
+**Full streaming flow:**
+```
+┌──────────┐         ┌──────────┐         ┌──────────┐
+│ Frontend │ ◀─────▶ │  Worker  │ ◀─────▶ │   LLM    │
+│          │         │          │         │ (Claude) │
+│ useObject│ stream  │streamObj │ stream  │          │
+│   hook   │ ──────▶ │  +pipe   │ ◀────── │          │
+└──────────┘         └──────────┘         └──────────┘
+     ▲                    │
+     │                    │ X-New-Snapshot header
+     └────────────────────┘
+```
+
+- **Worker→LLM:** `streamObject()` calls LLM, streams response
+- **Worker→Frontend:** `toTextStreamResponse()` pipes stream through
+- Worker adds `X-New-Snapshot` header, otherwise just passes stream
+- **Frontend:** `useObject()` hook parses stream, provides growing `object`
+
 **Pattern:** "Growing object" — the response is a single JSON object that builds up
 as tokens stream in. Vercel AI SDK handles parsing and Zod validation.
 
