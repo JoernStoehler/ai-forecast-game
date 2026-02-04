@@ -4,33 +4,6 @@ Items worth discussing before or during implementation. Roughly priority-ordered
 
 ---
 
-## Must Resolve Before M1
-
-### Q1: Jörn's Forecasting Model
-The rulebook prompt needs your model. What are the core dynamics?
-- Capability growth curves
-- Control/alignment mechanics
-- How votes affect trajectory
-- What triggers extinction vs utopia
-
-### Q2: Emergency Proposals
-What makes a proposal "emergency" (no defer allowed)?
-- Triggered by game state? Random? LLM decides?
-- Examples?
-
-### Q3: Game Ending
-What prevents infinite games?
-- Max turns? Max game-years? LLM instruction?
-- Fail-safe if LLM never outputs GameOver?
-
-### Q4: Shared In-Progress Games
-If someone visits `/?id=xyz` for an unfinished game:
-- Can they continue playing (anyone can edit)?
-- Read-only view?
-- Error / redirect to landing?
-
----
-
 ## Should Clarify Soon
 
 ### Q5: Pass vs Defer
@@ -103,6 +76,13 @@ Dots count, color, animation? Or use standard spinner?
 - [x] Sequential vs full trajectory → Sequential (boiling frog)
 - [x] Backend scope → Full from start (Worker + D1)
 - [x] Frontend framework → React + Vite + TypeScript
-- [x] Freeform text input → No (2-4 proposals, pick 0-1)
+- [x] Freeform text input → No (2-4 proposals, pick 0-2)
 - [x] Progress bars → No (news items + phase label)
 - [x] Multiplayer comparison → Twitter + baseline, defer aggregation to M5
+- [x] Q1: Forecasting model → Discussed; LLM tracks capability/alignment/policy qualitatively; proposals from pre-written library; P(doom)≈98% baseline, smart play can beat it
+- [x] Q2: Emergency/Urgent proposals → Renamed to "Urgent"; LLM decides which can't wait another turn (window closing, decision forced)
+- [x] Q3: Game endings → EXTINCTION (unaligned ASI), UTOPIA (aligned ASI, rare ~5-10%), MUDDLE (2050 failsafe, high fringeness)
+- [x] Q4: Shared in-progress games → Anyone with URL can continue; player's responsibility; enables cross-device play
+- [x] Naming: "Emergency" → "Urgent", "Normal floor" → "Floor"
+- [x] Prompt priority: Clear > Actionable > Quality > Short
+- [x] LLM turn procedure: Sample → Pressure check → Write news → Plan ending carefully → Write ending
