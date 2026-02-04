@@ -6,28 +6,21 @@ Items worth discussing before or during implementation. Roughly priority-ordered
 
 ## Should Clarify Soon
 
-### Q5: Pass vs Defer
-If player can pass 0-2, and defer is default... what's the difference between "pass 0" and "defer all"?
-- Is defer an explicit action or just "didn't pass"?
-- Game design intent?
-
-### Q6: Proposal Lifecycle
-- How long do deferred proposals stay on floor?
-- When do failed proposals return (if ever)?
-- LLM decides, or explicit rules?
-
 ### Q7: Pre-2026 History
 - Hardcoded events or LLM-generated at game start?
 - Same for all presets or varies?
 - How many events?
+- *Likely answer:* Hardcoded, same for all, ~10-20 events covering 2023-2025
 
 ### Q8: Phase Transitions
 - Who decides phase changes? (LLM? date thresholds?)
 - Full list of phases?
+- *Likely answer:* LLM decides based on vibes, no fixed list
 
 ### Q9: Time Progression
 - LLM outputs explicit month advance, or inferred from event dates?
 - Min/max months per turn?
+- *Likely answer:* Inferred from event dates; 1-6 months per turn
 
 ---
 
@@ -86,3 +79,11 @@ Dots count, color, animation? Or use standard spinner?
 - [x] Naming: "Emergency" → "Urgent", "Normal floor" → "Floor"
 - [x] Prompt priority: Clear > Actionable > Quality > Short
 - [x] LLM turn procedure: Sample → Pressure check → Write news → Plan ending carefully → Write ending
+- [x] Q5: Pass/Defer/Fail → Replaced with topic-based multiple choice (pick one per topic)
+- [x] Q6: Proposal lifecycle → Replaced by topic system; LLM generates 1-3 topics per turn
+- [x] Floor redesign: Topics with mutually exclusive options, no combinatorial explosion
+- [x] Urgent votes: Removed (every topic must be answered = all are "urgent")
+- [x] Fringeness: Gating (LLM only offers plausible options) + natural trajectory awareness
+- [x] Snapshot-based storage: Each turn creates new hash, URL = /?snapshot=abc123
+- [x] Topic/option descriptions: Optional, LLM decides based on complexity
+- [x] Selection UX: Standard radio buttons, no defaults, Submit locked until all topics selected

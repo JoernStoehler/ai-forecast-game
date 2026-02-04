@@ -208,7 +208,7 @@ After GameOver, News tab shows additional content:
 
 ## Vote Tab (Floor)
 
-Scrollable list of proposals + fixed Submit button.
+Topic-based multiple choice. Player picks one option per topic.
 
 ### Overall Structure
 
@@ -216,72 +216,85 @@ Scrollable list of proposals + fixed Submit button.
 ┌─────────────────────────────────────────────────┐
 │ ┌─────────────────────────────────────────────┐ │
 │ │                                             │ │
-│ │  PROPOSALS (pass 0-2)                       │ │
+│ │  [Topic Card 1]                             │ │
 │ │                                             │ │
-│ │  [Proposal Card 1]                          │ │
+│ │  [Topic Card 2]                             │ │  ← Scrollable area
 │ │                                             │ │
-│ │  [Proposal Card 2]                          │ │
-│ │                                             │ │  ← Scrollable area
-│ │  [Proposal Card 3]                          │ │
-│ │                                             │ │
-│ │  ───────────────────────────────────────    │ │
-│ │                                             │ │
-│ │  EMERGENCY (must vote)                      │ │
-│ │                                             │ │
-│ │  [Emergency Card 1]                         │ │
+│ │  [Topic Card 3]                             │ │
 │ │                                             │ │
 │ └─────────────────────────────────────────────┘ │
 ├─────────────────────────────────────────────────┤
 │                   [Submit]                      │  ← Fixed position
-│         (error if emergency not voted)          │
+│         (disabled until all topics selected)    │
 └─────────────────────────────────────────────────┘
 ```
 
-### Proposal Card
+### Topic Card
+
+Each topic presents 2-4 mutually exclusive options. Player must select exactly one.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ [background color = state: gray/green/red]      │
+│  TOPIC: AI Compute Regulation                   │  ← Topic title
+│  (optional description of context)              │  ← Topic description (optional)
 │                                                 │
-│  AI Monitoring Act                              │  ← Title (headline)
+│  ○ Strict monitoring (1e24 FLOP threshold)      │  ← Option with description
+│    Requires real-time reporting from all labs.  │
 │                                                 │
-│  Requires quarterly capability reports          │  ← Description (1-2 sentences)
-│  from frontier AI labs.                         │
+│  ○ Moderate monitoring (1e26 FLOP threshold)    │  ← Option with description
 │                                                 │
-│  [Pass]  [Defer]  [Fail]                        │  ← Buttons (inline)
+│  ○ Self-reporting only                          │  ← Option without description
+│                                                 │
+│  ○ No action                                    │  ← Option without description
 │                                                 │
 └─────────────────────────────────────────────────┘
 ```
 
-### Card States
+### Selection Behavior
 
-| State | Background | Button Highlighted | Meaning |
-|-------|------------|-------------------|---------|
-| Defer | Gray | [Defer] | Default. Proposal stays on floor next turn. |
-| Pass | Green | [Pass] | Proposal becomes law. Limit 0-2 per turn. |
-| Fail | Red | [Fail] | Proposal removed from floor for a while. |
+- **Standard radio buttons** — `<input type="radio">` per topic
+- **No default selected** — Player must consciously choose
+- **Can't unselect** — Once selected, can only switch to another option
+- **Submit locked** — Until ALL topics have a selection
 
-- Buttons only set state (clicking card does nothing)
-- Card background is visual indicator, not interactive
-- Defer is pre-selected on all proposals
+### Topic/Option Content
 
-### Emergency Card
+| Element | Required | Notes |
+|---------|----------|-------|
+| Topic title | Yes | e.g., "AI Compute Regulation" |
+| Topic description | No | Context if needed |
+| Option title | Yes | e.g., "Strict monitoring (1e24 FLOP)" |
+| Option description | No | Explains implications if complex |
 
-Same as proposal card, but:
-- Only [Pass] and [Fail] buttons (no [Defer])
-- Must vote to enable Submit button
+LLM decides when descriptions are needed:
+- **Include** when: option is nuanced, context matters, consequences need preview
+- **Omit** when: option is self-explanatory (e.g., "No action")
+
+### Number of Topics/Options
+
+- **Topics per turn:** 1-3 (LLM decides based on what's decision-worthy)
+- **Options per topic:** 2-4 (including "No action" when plausible)
+- **"No action" option:** Sometimes omitted if the topic demands a decision
+
+### Example Turn
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ [background color = state]                      │
+│  TOPIC: AI Compute Regulation                   │
 │                                                 │
-│  Emergency GPU Seizure Act                      │
+│  ○ Strict monitoring (1e24 FLOP threshold)      │
+│  ● Moderate monitoring (1e26 FLOP threshold)    │  ← Selected
+│  ○ Self-reporting only                          │
+│  ○ No action                                    │
+├─────────────────────────────────────────────────┤
+│  TOPIC: International Response                  │
+│  Following last month's UN summit...            │
 │                                                 │
-│  Government claims private GPU clusters         │
-│  for national security purposes.                │
-│                                                 │
-│  [Pass]  [Fail]                                 │  ← No Defer
-│                                                 │
+│  ○ Propose US-China inspection treaty           │
+│  ○ Unilateral US restrictions                   │
+│  ● Defer to next summit                         │  ← Selected
+├─────────────────────────────────────────────────┤
+│                   [Submit]                      │  ← Enabled (all topics selected)
 └─────────────────────────────────────────────────┘
 ```
 
