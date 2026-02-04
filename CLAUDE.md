@@ -1,3 +1,24 @@
+# AI Forecast Game — Agent Instructions
+
+## Project Rules
+
+**Specs are requirements, not suggestions:**
+- `docs/*.md` files define what to build
+- Do NOT modify specs without explicit approval from Jörn
+- If a spec seems wrong or unclear, ASK before changing it
+
+**Definition of Done (before checking a checkbox):**
+- Code compiles and passes lint
+- Feature works end-to-end (not just "function exists")
+- Can be demonstrated (manually or via test)
+- `raise NotImplementedError` or `// TODO` stubs do NOT count as done
+
+**If blocked or uncertain:**
+- Don't guess — ask Jörn
+- Don't "fix" specs to match what you built — fix code to match specs
+
+---
+
 # Setup Status
 
 ## Smoke Test
