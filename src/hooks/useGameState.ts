@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { GameState, UIState, VoteEvent, VoteChoices, TurnResponse, SummaryResponse, GameEvent } from '../types/game';
-import { createGame, loadGame, submitVote, fetchSummary } from '../api/client';
+import { createGame, loadGame, submitTurn, streamLLMGeneration, streamSummary, type SnapshotStatus } from '../api/client';
 
 function getSnapshotFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
@@ -49,47 +49,16 @@ export function useGameState() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Load game from URL on mount
-  useEffect(() => {
-    const snapshot = getSnapshotFromUrl();
-    if (snapshot) {
-      setState(prev => ({ ...prev, isLoading: true }));
-      loadGame(snapshot)
-        .then(gameState => {
-          setState({
-            ...gameState,
-            isLoading: false,
-            loadingState: 'none',
-            currentVote: extractCurrentVote(gameState.events),
-          });
-        })
-        .catch(err => {
-          setError(err.message);
-          setState(prev => ({ ...prev, isLoading: false }));
-        });
-    }
-  }, []);
-
-  // Start a new game
-  const startGame = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoading: true }));
-    setError(null);
-    setSummary(null);
+  // Start LLM generation for a snapshot in 'awaiting_llm' status
+  const startLLMGeneration = useCallback(async (snapshot: string, baseState: GameState) => {
+    setState(prev => ({
+      ...prev,
+      isLoading: true,
+      loadingState: 'thinking',
+    }));
 
     try {
-      const { snapshot, state: gameState } = await createGame();
-      setSnapshotInUrl(snapshot);
-
-      // After creating, we need to trigger the first turn to get initial events
-      setState({
-        ...gameState,
-        isLoading: true,
-        loadingState: 'thinking',
-        currentVote: null,
-      });
-
-      // Submit empty choices to get the first turn
-      await submitVote(snapshot, {}, {
+      await streamLLMGeneration(snapshot, {
         onPartial: (partial) => {
           if (partial.events && partial.events.length > 0) {
             setState(prev => ({
@@ -98,10 +67,11 @@ export function useGameState() {
             }));
           }
         },
-        onComplete: (response, newSnapshot) => {
+        onComplete: (response: TurnResponse, newSnapshot: string) => {
           setSnapshotInUrl(newSnapshot);
 
           const newEvents: GameEvent[] = [
+            ...baseState.events,
             ...response.events,
           ];
 
@@ -112,11 +82,18 @@ export function useGameState() {
             });
           }
 
+          if (response.gameOver) {
+            newEvents.push({
+              type: 'gameOver' as const,
+              outcome: response.gameOver.outcome,
+            });
+          }
+
           setState(prev => ({
             ...prev,
             snapshot: newSnapshot,
             events: newEvents,
-            phase: response.phase,
+            phase: response.gameOver ? response.gameOver.outcome : response.phase,
             date: response.events.length > 0
               ? response.events[response.events.length - 1].date
               : prev.date,
@@ -132,12 +109,65 @@ export function useGameState() {
         },
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start game');
-      setState(prev => ({ ...prev, isLoading: false }));
+      setError(err instanceof Error ? err.message : 'Failed to generate content');
+      setState(prev => ({ ...prev, isLoading: false, loadingState: 'none' }));
     }
   }, []);
 
-  // Submit vote choices
+  // Load game from URL on mount
+  useEffect(() => {
+    const snapshot = getSnapshotFromUrl();
+    if (snapshot) {
+      setState(prev => ({ ...prev, isLoading: true }));
+      loadGame(snapshot)
+        .then(({ state: gameState, status }) => {
+          setState({
+            ...gameState,
+            isLoading: status === 'awaiting_llm',
+            loadingState: status === 'awaiting_llm' ? 'thinking' : 'none',
+            currentVote: extractCurrentVote(gameState.events),
+          });
+
+          // If snapshot is awaiting LLM, start generation
+          if (status === 'awaiting_llm') {
+            startLLMGeneration(snapshot, gameState);
+          }
+        })
+        .catch(err => {
+          setError(err.message);
+          setState(prev => ({ ...prev, isLoading: false }));
+        });
+    }
+  }, [startLLMGeneration]);
+
+  // Start a new game
+  const startGame = useCallback(async () => {
+    setState(prev => ({ ...prev, isLoading: true }));
+    setError(null);
+    setSummary(null);
+
+    try {
+      const { snapshot, state: gameState, status } = await createGame();
+      setSnapshotInUrl(snapshot);
+
+      setState({
+        ...gameState,
+        isLoading: true,
+        loadingState: 'thinking',
+        currentVote: null,
+      });
+
+      // New games are always awaiting_llm, start generation
+      if (status === 'awaiting_llm') {
+        await startLLMGeneration(snapshot, gameState);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start game');
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  }, [startLLMGeneration]);
+
+  // Submit vote choices (two-step: instant turn submission, then LLM stream)
   const submitChoices = useCallback(async (choices: VoteChoices) => {
     if (!state.snapshot) return;
 
@@ -149,64 +179,25 @@ export function useGameState() {
     setError(null);
 
     try {
-      await submitVote(state.snapshot, choices, {
-        onPartial: (partial) => {
-          if (partial.events && partial.events.length > 0) {
-            setState(prev => ({
-              ...prev,
-              loadingState: 'typing',
-            }));
-          }
-        },
-        onComplete: (response: TurnResponse, newSnapshot: string) => {
-          setSnapshotInUrl(newSnapshot);
+      // Step 1: Submit player turn (instant)
+      const { snapshot: newSnapshot, state: newState } = await submitTurn(state.snapshot, choices);
+      setSnapshotInUrl(newSnapshot);
 
-          setState(prev => {
-            const newEvents: GameEvent[] = [
-              ...prev.events,
-              { type: 'voteChoices' as const, choices },
-              ...response.events,
-            ];
+      // Update state with player's choice recorded
+      setState(prev => ({
+        ...prev,
+        snapshot: newSnapshot,
+        events: newState.events,
+        currentVote: null, // Clear vote since we just answered it
+      }));
 
-            if (response.vote) {
-              newEvents.push({
-                type: 'vote' as const,
-                topics: response.vote.topics,
-              });
-            }
-
-            if (response.gameOver) {
-              newEvents.push({
-                type: 'gameOver' as const,
-                outcome: response.gameOver.outcome,
-              });
-            }
-
-            return {
-              ...prev,
-              snapshot: newSnapshot,
-              events: newEvents,
-              phase: response.gameOver ? response.gameOver.outcome : response.phase,
-              date: response.events.length > 0
-                ? response.events[response.events.length - 1].date
-                : prev.date,
-              isGameOver: !!response.gameOver,
-              isLoading: false,
-              loadingState: 'none',
-              currentVote: response.vote ? { type: 'vote', topics: response.vote.topics } : null,
-            };
-          });
-        },
-        onError: (err) => {
-          setError(err.message);
-          setState(prev => ({ ...prev, isLoading: false, loadingState: 'none' }));
-        },
-      });
+      // Step 2: Start LLM generation
+      await startLLMGeneration(newSnapshot, newState);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit vote');
       setState(prev => ({ ...prev, isLoading: false, loadingState: 'none' }));
     }
-  }, [state.snapshot]);
+  }, [state.snapshot, startLLMGeneration]);
 
   // Load post-game summary
   const loadSummary = useCallback(async () => {
@@ -215,7 +206,7 @@ export function useGameState() {
     setState(prev => ({ ...prev, isLoading: true }));
 
     try {
-      await fetchSummary(state.snapshot, {
+      await streamSummary(state.snapshot, {
         onPartial: (partial) => {
           setSummary(partial as SummaryResponse);
         },

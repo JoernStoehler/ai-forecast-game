@@ -76,18 +76,55 @@ export async function loadGame(
   }
 }
 
-export async function saveGameState(
+// Save player's turn (instant operation - just adds voteChoices event)
+export async function savePlayerTurn(
   db: Database,
   newSnapshot: string,
   oldState: GameState,
-  turnResponse: TurnResponse,
   choices: VoteChoices
 ): Promise<GameState> {
-  // Build new events array
   const newEvents: GameEvent[] = [
     ...oldState.events,
-    // Add the player's choices as an event
     { type: 'voteChoices' as const, choices },
+  ];
+
+  const newState: GameState = {
+    snapshot: newSnapshot,
+    preset: oldState.preset,
+    events: newEvents,
+    phase: oldState.phase, // Phase unchanged until LLM responds
+    date: oldState.date,   // Date unchanged until LLM responds
+    isGameOver: false,
+  };
+
+  await db
+    .prepare(
+      `INSERT INTO games (snapshot, version, preset, state, ended_at, outcome)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      newSnapshot,
+      CURRENT_VERSION,
+      oldState.preset,
+      JSON.stringify(newState),
+      null,
+      null
+    )
+    .run();
+
+  return newState;
+}
+
+// Save LLM's turn (after streaming completes)
+export async function saveLLMTurn(
+  db: Database,
+  newSnapshot: string,
+  oldState: GameState,
+  turnResponse: TurnResponse
+): Promise<GameState> {
+  // Build new events array (oldState already has voteChoices from player turn)
+  const newEvents: GameEvent[] = [
+    ...oldState.events,
     // Add the new news events
     ...turnResponse.events,
   ];

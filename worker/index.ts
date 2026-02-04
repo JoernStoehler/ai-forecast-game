@@ -1,6 +1,6 @@
-import { VoteRequestSchema, type TurnResponse } from '../src/types/game';
+import { VoteRequestSchema, type TurnResponse, type GameState } from '../src/types/game';
 import { getRandomPreset } from '../src/prompts/presets';
-import { createGame, loadGame, saveGameState, generateSnapshotId, type Database } from './db';
+import { createGame, loadGame, savePlayerTurn, saveLLMTurn, generateSnapshotId, type Database } from './db';
 import { streamTurnResponse, streamSummaryResponse, type LLMEnv } from './llm';
 
 interface Env extends LLMEnv {
@@ -29,6 +29,21 @@ function errorResponse(message: string, status = 400) {
   return jsonResponse({ error: message }, status);
 }
 
+// Determine snapshot status based on events
+// 'awaiting_llm' = needs LLM generation (fresh game or has voteChoices as last event)
+// 'complete' = has vote topics or is game over
+function getSnapshotStatus(state: GameState): 'awaiting_llm' | 'complete' {
+  if (state.isGameOver) return 'complete';
+  if (state.events.length === 0) return 'awaiting_llm'; // Fresh game
+
+  const lastEvent = state.events[state.events.length - 1];
+  if (lastEvent.type === 'voteChoices') return 'awaiting_llm';
+  if (lastEvent.type === 'vote') return 'complete';
+
+  // News events without a following vote - shouldn't happen in normal flow
+  return 'awaiting_llm';
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -46,13 +61,19 @@ export default {
       }
 
       // POST /api/game/create - Create new game
+      // Returns snapshot in 'awaiting_llm' status (needs initial LLM generation)
       if (url.pathname === '/api/game/create' && request.method === 'POST') {
         const preset = getRandomPreset();
         const { snapshot, state } = await createGame(env.DB, preset.id);
-        return jsonResponse({ snapshot, state });
+        return jsonResponse({
+          snapshot,
+          state,
+          status: 'awaiting_llm',
+        });
       }
 
       // GET /api/game/:snapshot - Get game state
+      // Returns state with status: 'awaiting_llm' | 'complete'
       const getGameMatch = url.pathname.match(/^\/api\/game\/([a-z0-9]+)$/i);
       if (getGameMatch && request.method === 'GET') {
         const snapshot = getGameMatch[1];
@@ -62,15 +83,18 @@ export default {
           return errorResponse(result.error, result.error === 'Game not found' ? 404 : 400);
         }
 
-        return jsonResponse({ state: result });
+        return jsonResponse({
+          state: result,
+          status: getSnapshotStatus(result),
+        });
       }
 
-      // POST /api/game/:snapshot/vote - Submit vote and get next turn
-      const voteMatch = url.pathname.match(/^\/api\/game\/([a-z0-9]+)\/vote$/i);
-      if (voteMatch && request.method === 'POST') {
-        const snapshot = voteMatch[1];
+      // POST /api/game/:snapshot/turn - Submit player choices (instant)
+      // Creates new snapshot with voteChoices applied, returns in 'awaiting_llm' status
+      const turnMatch = url.pathname.match(/^\/api\/game\/([a-z0-9]+)\/turn$/i);
+      if (turnMatch && request.method === 'POST') {
+        const snapshot = turnMatch[1];
 
-        // Load game state
         const state = await loadGame(env.DB, snapshot);
         if ('error' in state) {
           return errorResponse(state.error, state.error === 'Game not found' ? 404 : 400);
@@ -78,6 +102,11 @@ export default {
 
         if (state.isGameOver) {
           return errorResponse('Game is already over', 400);
+        }
+
+        // Ensure we're in 'complete' status (have vote topics to respond to)
+        if (getSnapshotStatus(state) === 'awaiting_llm') {
+          return errorResponse('Cannot submit turn: snapshot is awaiting LLM generation', 400);
         }
 
         // Parse and validate request body
@@ -95,6 +124,37 @@ export default {
 
         const { choices } = parseResult.data;
 
+        // Create new snapshot with player's choices applied
+        const newSnapshot = generateSnapshotId();
+        const newState = await savePlayerTurn(env.DB, newSnapshot, state, choices);
+
+        return jsonResponse({
+          snapshot: newSnapshot,
+          state: newState,
+          status: 'awaiting_llm',
+        });
+      }
+
+      // GET /api/game/:snapshot/stream - Stream LLM generation
+      // Starts (or restarts) LLM generation for snapshots in 'awaiting_llm' status
+      // Returns streaming response with X-New-Snapshot header at completion
+      const streamMatch = url.pathname.match(/^\/api\/game\/([a-z0-9]+)\/stream$/i);
+      if (streamMatch && request.method === 'GET') {
+        const snapshot = streamMatch[1];
+
+        const state = await loadGame(env.DB, snapshot);
+        if ('error' in state) {
+          return errorResponse(state.error, state.error === 'Game not found' ? 404 : 400);
+        }
+
+        if (getSnapshotStatus(state) !== 'awaiting_llm') {
+          return errorResponse('Snapshot does not need LLM generation', 400);
+        }
+
+        // Extract the player's choices from the last event (if any)
+        const lastEvent = state.events[state.events.length - 1];
+        const choices = lastEvent?.type === 'voteChoices' ? lastEvent.choices : {};
+
         // Generate new snapshot ID for the result
         const newSnapshot = generateSnapshotId();
 
@@ -106,20 +166,16 @@ export default {
         const writer = writable.getWriter();
         const encoder = new TextEncoder();
 
-        // Track the full response to save to DB
-        let fullResponse: TurnResponse | null = null;
-
         // Process the stream
         (async () => {
           try {
             for await (const partialObject of streamResult.partialObjectStream) {
-              // Write partial object to client
               await writer.write(encoder.encode(JSON.stringify(partialObject) + '\n'));
             }
 
             // Get final object and save to DB
-            fullResponse = await streamResult.object;
-            await saveGameState(env.DB, newSnapshot, state, fullResponse, choices);
+            const fullResponse: TurnResponse = await streamResult.object;
+            await saveLLMTurn(env.DB, newSnapshot, state, fullResponse);
           } catch (error) {
             console.error('Stream error:', error);
             await writer.write(encoder.encode(JSON.stringify({ error: 'Stream error' }) + '\n'));
@@ -138,7 +194,7 @@ export default {
         });
       }
 
-      // GET /api/game/:snapshot/summary - Get post-game summary
+      // GET /api/game/:snapshot/summary - Stream post-game summary
       const summaryMatch = url.pathname.match(/^\/api\/game\/([a-z0-9]+)\/summary$/i);
       if (summaryMatch && request.method === 'GET') {
         const snapshot = summaryMatch[1];
@@ -152,7 +208,6 @@ export default {
           return errorResponse('Game is not over yet', 400);
         }
 
-        // Stream summary response
         const streamResult = await streamSummaryResponse(state, env);
 
         const { readable, writable } = new TransformStream();

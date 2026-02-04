@@ -168,36 +168,76 @@ No page reloads. React Router or simple `useEffect` on URL params.
 
 ### Responsibilities
 
-1. **Create game** — Roll preset, initialize state, return ID
-2. **Get state** — Return current game state for given ID
-3. **Submit vote** — Validate VoteChoices, call LLM, update state
-4. **Stream response** — Forward LLM streaming to client
-5. **Aggregate stats** — Compute baseline comparisons (M5)
+1. **Create game** — Roll preset, initialize state, return snapshot in `awaiting_llm` status
+2. **Get state** — Return current game state with status for given snapshot
+3. **Submit turn** — Persist player choices (instant), return new snapshot in `awaiting_llm` status
+4. **Stream LLM** — Generate and stream LLM response, create new snapshot when complete
+5. **Stream summary** — Generate post-game summary (M3+)
+6. **Aggregate stats** — Compute baseline comparisons (M5)
+
+### Snapshot Status
+
+Each snapshot has a status:
+- `awaiting_llm` — Needs LLM generation (fresh game, or has player choices without LLM response)
+- `complete` — Has vote topics for player to respond to, or is game over
 
 ### Endpoints
 
 ```
 POST /api/game/create
   Request: {}
-  Response: { snapshot: string }
+  Response: { snapshot: string, state: GameState, status: 'awaiting_llm' }
+  // New game always needs initial LLM generation
 
 GET /api/game/:snapshot
-  Response: { state: GameState }
+  Response: { state: GameState, status: 'awaiting_llm' | 'complete' }
+  // Load any snapshot, status tells frontend what to do next
 
-POST /api/game/:snapshot/vote
+POST /api/game/:snapshot/turn
   Request: { choices: VoteChoices }  -- Zod-validated
-  Response: Streaming TurnResponse (growing object via Vercel AI SDK)
-    - Object builds up as tokens arrive
+  Response: { snapshot: string, state: GameState, status: 'awaiting_llm' }
+  // Instant operation - persists player choices, returns new snapshot
+  // Only valid when current snapshot status is 'complete'
+
+GET /api/game/:snapshot/stream
+  Response: Streaming TurnResponse (NDJSON, growing object)
+    - Each line is partial JSON as tokens arrive
     - Final shape: { events: [...], vote?: {...}, gameOver?: {...}, phase }
   Headers:
-    Content-Type: text/plain; charset=utf-8  (AI SDK default)
+    Content-Type: text/plain; charset=utf-8
     Transfer-Encoding: chunked
-    X-New-Snapshot: abc456  -- New snapshot hash, client updates URL
+    X-New-Snapshot: abc456  -- Final snapshot created when stream completes
+  // Only valid when snapshot status is 'awaiting_llm'
+  // If called again on same snapshot, restarts generation (idempotent)
 
 GET /api/game/:snapshot/summary
-  Response: { summary: SummaryData }
-  (Called after GameOver for post-game analysis)
+  Response: Streaming SummaryResponse (NDJSON)
+  // Only valid for game over snapshots
 ```
+
+### Flow Diagram
+
+```
+Player submits vote on snapshot A (status: complete)
+         │
+         ▼
+POST /turn ─────► Creates snapshot B (status: awaiting_llm)
+         │        Player's choice persisted immediately
+         │
+         ▼
+GET /stream on B ─────► Streams LLM response
+         │              Creates snapshot C when done
+         │
+         ▼
+URL updates to C (status: complete)
+Player sees new news + vote topics
+```
+
+**Reconnection:** If frontend disconnects mid-stream:
+1. Page reload → GET /:snapshot on B
+2. Sees status: awaiting_llm
+3. GET /stream on B → Restarts LLM generation
+4. Player's choice (already in B) is preserved
 
 ### Storage (D1)
 
