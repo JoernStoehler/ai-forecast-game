@@ -16,7 +16,7 @@ Complete walkthrough of the player experience from discovery to sharing.
 ### What they click
 
 - Fresh link: `https://joernstoehler.com/`
-- Shared game link: `https://joernstoehler.com/?id=a3x9k2`
+- Shared game link: `https://joernstoehler.com/?snapshot=a3x9k2`
 
 ---
 
@@ -45,7 +45,7 @@ Complete walkthrough of the player experience from discovery to sharing.
 │                                                 │
 │  HOW TO PLAY                                    │
 │  • Read news events as they unfold              │
-│  • Vote on policy proposals                     │
+│  • Make policy decisions on key topics          │
 │  • Try to delay or prevent extinction           │
 │                                                 │
 │  About | Credits                                │
@@ -63,11 +63,11 @@ Complete walkthrough of the player experience from discovery to sharing.
 
 ## 3. Shared Link Landing
 
-**URL:** `https://joernstoehler.com/?id=a3x9k2`
+**URL:** `https://joernstoehler.com/?snapshot=a3x9k2`
 
 ### Completed Game (friend's playthrough)
 
-If the game at `id=a3x9k2` is finished:
+If the game at `snapshot=abc123` is finished:
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -98,11 +98,11 @@ If the game at `id=a3x9k2` is finished:
 
 ### In-Progress Game (resume)
 
-If the game at `id=a3x9k2` is still in progress:
+If the game at `snapshot=abc123` is still in progress:
 
 - Player sees their saved game state
 - News tab shows events so far
-- Vote tab shows current proposals (if waiting for vote)
+- Vote tab shows current topics (if waiting for vote)
 - Can continue playing
 
 ---
@@ -118,7 +118,7 @@ If the game at `id=a3x9k2` is still in progress:
    - Generates 6-char ID
    - Stores in database
    - Returns `{ id: "a3x9k2" }`
-3. Browser updates URL to `/?id=a3x9k2` (no page reload)
+3. Browser updates URL to `/?snapshot=a3x9k2` (no page reload)
 4. Tutorial tab hidden
 5. News + Vote tabs appear
 
@@ -135,7 +135,7 @@ If the game at `id=a3x9k2` is still in progress:
 2. LLM generates first batch of events (late 2025 / early 2026)
 3. Events stream to browser, appear in News tab
 4. LLM ends with Vote event
-5. Vote tab populates with proposals
+5. Vote tab populates with topics and options
 6. Player's turn begins
 
 ---
@@ -147,26 +147,24 @@ If the game at `id=a3x9k2` is still in progress:
 **What they see:**
 
 - News tab: Recent events (can scroll back to history)
-- Vote tab: 2-4 proposals + 0-3 emergency items
+- Vote tab: 1-3 topic cards, each with 2-4 options
 
 **What they do:**
 
 1. Read news to understand current situation
 2. Switch to Vote tab (mobile) or look at right panel (desktop)
-3. For each proposal:
-   - Read title + description
-   - Click [Pass], [Defer], or [Fail]
-   - Card background changes color
-4. For emergency items:
-   - Must click [Pass] or [Fail] (no defer)
-5. Click [Submit]
+3. For each topic card:
+   - Read topic title (and optional description)
+   - Review the 2-4 mutually exclusive options
+   - Select one option (radio button)
+4. Click [Submit] when all topics have a selection
 
 **Constraints:**
 
-- Can pass 0-2 proposals per turn
-- Can fail any number
-- Defer is default (stays on floor)
-- Submit disabled until all emergencies voted
+- Must select exactly one option per topic
+- Cannot proceed without selecting all topics
+- No unselecting — can only switch to a different option
+- Submit disabled until all topics have a selection
 
 ### LLM's Turn
 
@@ -192,18 +190,19 @@ If the game at `id=a3x9k2` is still in progress:
 - Each turn advances 1-6 months (LLM decides based on event density)
 - Date in header updates
 - Phase label may change ("early adoption" → "acceleration" → "takeoff")
-- New proposals appear; old ones may disappear or persist
+- New topics reflect current state of the world
 
 ### Typical Turn Sequence
 
 ```
 1. Player reads: "Google announces AGI benchmark achievement"
 2. Player reads: "EU proposes AI liability framework"
-3. Player votes: Pass "AI Liability Act", Fail "Compute Subsidy"
-4. Player submits
-5. LLM generates: 3 news events, new vote with 4 proposals
-6. Player reads and votes
-7. Repeat...
+3. Player sees 2 topics: "AI Liability" and "Compute Regulation"
+4. Player selects one option per topic
+5. Player submits
+6. LLM generates: 3 news events, new vote with 2 topics
+7. Player reads and votes
+8. Repeat...
 ```
 
 ---
@@ -253,7 +252,7 @@ Then (after ~20s):
 │                                                 │
 │  STATS                                          │
 │  📅 Final date: 2035-Aug                        │
-│  📜 Proposals passed: 7                         │
+│  📜 Decisions made: 24                          │
 │  ...                                            │
 │                                                 │
 ├─────────────────────────────────────────────────┤
@@ -304,7 +303,7 @@ Modal appears:
 │  Human Extinction in 2035                       │
 │  — Can you do better?                           │
 │                                                 │
-│  https://joernstoehler.com/?id=a3x9k2           │
+│  https://joernstoehler.com/?snapshot=a3x9k2           │
 │                                                 │
 │  [Copy to Clipboard]                            │
 │                                                 │
@@ -331,7 +330,7 @@ Human Extinction in 2035 — Can you do better?
 I played Jörn Stöhler's AI futures game and reached
 extinction in August 2035 (Slow Takeoff preset).
 
-Try it yourself: https://joernstoehler.com/?id=a3x9k2
+Try it yourself: https://joernstoehler.com/?snapshot=a3x9k2
 ```
 
 ---
@@ -344,7 +343,7 @@ Try it yourself: https://joernstoehler.com/?id=a3x9k2
 2. Browser calls `POST /api/game/create`
 3. Worker guarantees different preset than previous game
 4. New ID generated
-5. URL updates to `/?id=xyz789`
+5. URL updates to `/?snapshot=xyz789`
 6. Fresh game begins
 
 ### Preset Rotation
@@ -357,7 +356,7 @@ Try it yourself: https://joernstoehler.com/?id=a3x9k2
 
 ## 10. Return Visit
 
-### Player bookmarked `/?id=a3x9k2`
+### Player bookmarked `/?snapshot=a3x9k2`
 
 - Game state persists on server
 - Player sees exactly where they left off
@@ -393,7 +392,7 @@ Try it yourself: https://joernstoehler.com/?id=a3x9k2
 - Seeing friend's result before playing (sets expectation)
 - Seeing own result vs friend's
 - Seeing own result vs average for same preset
-- Discussing strategies ("I should have passed X earlier")
+- Discussing strategies ("I should have chosen X earlier")
 
 ---
 

@@ -114,7 +114,7 @@ Shown when visiting `/` without an active game.
 │  HOW TO PLAY                                    │
 │                                                 │
 │  • Read news events as they unfold              │
-│  • Vote on policy proposals                     │
+│  • Make policy decisions on key topics          │
 │  • Try to delay or prevent extinction           │
 │                                                 │
 │  ─────────────────────────────────────────────  │
@@ -126,7 +126,7 @@ Shown when visiting `/` without an active game.
 
 - Above fold: hook + [Start Game] button
 - Below fold: how to play + links (for scrollers)
-- [Start Game] calls Worker, which returns `id`, then redirect to `/?id=xyz`
+- [Start Game] calls Worker, which returns `snapshot`, then redirect to `/?snapshot=abc123`
 
 ---
 
@@ -303,7 +303,7 @@ LLM decides when descriptions are needed:
 | State | Appearance | Behavior |
 |-------|------------|----------|
 | Ready | Enabled | Sends VoteChoices to backend |
-| Emergency not voted | Disabled + error message | Shows "Vote on all emergency items" |
+| Topics not complete | Disabled | All topics must have a selection |
 | Submitting | Loading state | Shows "●●● thinking..." or similar |
 
 ### Deferred (M4 Visual Polish)
@@ -353,7 +353,7 @@ Shown after GameOver. Replaces Vote tab.
 │  STATS                                          │
 │                                                 │
 │  📅 Final date: 2035-Aug                        │  ← Always shown
-│  📜 Proposals passed: 7                         │
+│  📜 Decisions made: 24                          │
 │  🛡️ Months of pause achieved: 14               │  ← LLM picks contextual extras
 │  🏛️ International agreements: 2                │
 │  ⚡ Compute ceiling reached: 10^26 FLOP        │
@@ -401,13 +401,13 @@ Opens modal:
 ### [New Game] Button
 
 - Starts new game with guaranteed different preset
-- Redirect to new `/?id=xyz`
+- Redirect to new `/?snapshot=xyz`
 
 ---
 
 ## Shared Link View
 
-When visiting `/?id=xyz` for a completed game:
+When visiting `/?snapshot=xyz` for a completed game:
 
 - Same as post-game view (News + Summary)
 - News tab shows full timeline with revealed secrets + commentary
@@ -430,9 +430,9 @@ When visiting `/?id=xyz` for a completed game:
 
 ## Visual Cues
 
-- **Glow effect** on unseen elements (new proposals, first visit to tab)
+- **Glow effect** on unseen elements (new topics, first visit to tab)
 - **Color coding:**
-  - Gray = neutral/defer
-  - Green = pass/positive/UTOPIA
-  - Red = fail/negative/EXTINCTION
+  - Gray = neutral
+  - Green = positive/UTOPIA
+  - Red = negative/EXTINCTION
 - **Post-game revealed events:** Different color or icon (e.g., 🔓)

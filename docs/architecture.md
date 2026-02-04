@@ -39,7 +39,7 @@
 │   │   │   └── LoadingIndicator.tsx
 │   │   ├── VoteTab/
 │   │   │   ├── VoteTab.tsx
-│   │   │   ├── ProposalCard.tsx
+│   │   │   ├── TopicCard.tsx
 │   │   │   └── SubmitButton.tsx
 │   │   ├── SummaryTab/
 │   │   │   ├── SummaryTab.tsx
@@ -71,7 +71,7 @@ Simple React state + context. No Redux/Zustand needed for this scale.
 
 ```typescript
 interface GameState {
-  id: string | null;
+  snapshot: string | null;
   events: GameEvent[];      // Append-only log
   phase: string;
   date: { year: number; month: number };
@@ -86,8 +86,7 @@ type GameEvent = NewsEvent | VoteEvent | VoteChoicesEvent | GameOverEvent;
 
 ### URL Handling
 
-- `/?id=xyz` — Load game state from Worker
-- `/?id=xyz&dark=1` — Dark mode (optional)
+- `/?snapshot=abc123` — Load game state from Worker
 - `/` — Show Tutorial tab (no game loaded)
 
 No page reloads. React Router or simple `useEffect` on URL params.
@@ -109,18 +108,18 @@ No page reloads. React Router or simple `useEffect` on URL params.
 ```
 POST /api/game/create
   Request: {}
-  Response: { id: string }
+  Response: { snapshot: string }
 
-GET /api/game/:id
+GET /api/game/:snapshot
   Response: { state: GameState }
 
-POST /api/game/:id/vote
+POST /api/game/:snapshot/vote
   Request: { choices: VoteChoices }
   Response: Streaming (SSE or WebSocket)
     - Multiple NewsEvent
     - One VoteEvent OR GameOverEvent
 
-GET /api/game/:id/summary
+GET /api/game/:snapshot/summary
   Response: { summary: SummaryData }
   (Called after GameOver for post-game analysis)
 ```
@@ -251,11 +250,15 @@ interface TurnResponse {
     isHidden?: boolean;  // Revealed post-game
   }>;
   vote?: {
-    proposals: Array<{
+    topics: Array<{
       id: string;
-      title: string;
-      description: string;
-      isEmergency: boolean;
+      title: string;           // e.g., "AI Compute Regulation"
+      description?: string;    // Optional context
+      options: Array<{
+        id: string;
+        title: string;         // e.g., "Strict monitoring (1e24 FLOP threshold)"
+        description?: string;  // Optional implications
+      }>;
     }>;
   };
   gameOver?: {
@@ -334,16 +337,16 @@ Browser                    Worker                     Storage
    │  POST /api/game/create   │                          │
    │─────────────────────────▶│                          │
    │                          │  Roll preset             │
-   │                          │  Generate ID             │
+   │                          │  Generate snapshot hash  │
    │                          │  Create initial state    │
    │                          │                          │
    │                          │  INSERT game             │
    │                          │─────────────────────────▶│
    │                          │                          │
-   │  { id: "a3x9k2" }        │                          │
+   │  { snapshot: "abc123" }  │                          │
    │◀─────────────────────────│                          │
    │                          │                          │
-   │  Navigate to /?id=a3x9k2 │                          │
+   │  Navigate to /?snapshot=abc123                      │
 ```
 
 ### Game Turn
@@ -351,7 +354,7 @@ Browser                    Worker                     Storage
 ```
 Browser                    Worker                     LLM API
    │                          │                          │
-   │  POST /api/game/:id/vote │                          │
+   │  POST /api/game/:snapshot/vote                      │
    │  { choices: {...} }      │                          │
    │─────────────────────────▶│                          │
    │                          │                          │
@@ -386,7 +389,7 @@ Browser                    Worker                     LLM API
 ```typescript
 interface StoredGame {
   version: number;  // Increment on breaking changes
-  id: string;
+  snapshot: string;
   preset: string;
   state: GameState;
   // ...
@@ -394,8 +397,8 @@ interface StoredGame {
 
 const CURRENT_VERSION = 1;
 
-function loadGame(id: string): GameState | Error {
-  const stored = db.get(id);
+function loadGame(snapshot: string): GameState | Error {
+  const stored = db.get(snapshot);
   if (stored.version !== CURRENT_VERSION) {
     return new Error('Game version outdated. Please start a new game.');
   }

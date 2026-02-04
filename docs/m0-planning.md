@@ -74,18 +74,19 @@ Player reads LLM-generated news/events as a timeline unfolds, then votes on poli
 - Post-game: preset name + description revealed, enables comparison
 - Presets have name + description (what makes it different from others)
 
-### Player Actions
-- LLM proposes **2-4 contextually plausible proposals** per vote phase
-- Player picks **0-2 to pass**, can **fail** any (removes from floor for a while)
-- **Defer** is default (proposal stays on floor)
+### Player Actions (Topic-Based Voting)
+- LLM generates **1-3 topics** per vote phase (e.g., "AI Compute Regulation", "International Response")
+- Each topic has **2-4 mutually exclusive options** including "No action" when plausible
+- Player selects **exactly one option per topic** (standard radio buttons)
 - **No freeform text input** — prevents players pushing out of scenario space
-- Proposals evolve: new appear, old disappear, some persist, some get superseded
+- Topics are contextually plausible — LLM only offers options that make sense given current trajectory
 
 ### Vote Structure
-- **Normal floor:** Multiple proposals, pick 0-2 to pass, fail any, defer rest
-- **Emergency votes:** 0-3 urgent proposals requiring yes/no (no defer allowed)
-- Emergency items at bottom of vote list
-- Submit button fixed at bottom (disabled until all emergencies voted)
+- **Topic cards:** Each topic shows title, optional description, and 2-4 options
+- **Options:** Each option has title, optional description explaining implications
+- **Selection:** Radio buttons, no default selected, can switch but not unselect
+- **Submit:** Fixed at bottom, disabled until all topics have a selection
+- **No emergency/urgent distinction:** All topics must be answered each turn
 
 ### Visible State
 - **No numerical progress bars** — capability measurement is unsolved IRL
@@ -135,19 +136,17 @@ Append-only list of events, reduced to React state:
 - Prompt caching for cost efficiency
 
 ### URL Structure
-- `/?id=xyz` — game state (current or completed)
-- `/?id=xyz&dark=1` — optional dark mode
+- `/?snapshot=abc123` — game state (current or completed)
 - `/` — landing/tutorial page
 
 ---
 
 ## Gameplay Parameters (Tune via Playtesting)
 
-- Proposals per vote phase (2-4)
-- Pass limit per turn (1-2)
-- Votes per game-year
+- Topics per turn (1-3)
+- Options per topic (2-4)
+- Turns per game-year
 - Event granularity between votes
-- Balance of normal vs emergency votes
 - Game length (~10-20 decision points for <15min)
 
 ---
@@ -184,11 +183,11 @@ Append-only list of events, reduced to React state:
 
 ```
 1. Player visits / → sees Tutorial tab
-2. Clicks [Start Game] → Worker creates (id, state)
-3. Redirect to /?id=xyz → News + Vote tabs visible
+2. Clicks [Start Game] → Worker creates snapshot
+3. Redirect to /?snapshot=abc123 → News + Vote tabs visible
 4. LLM generates timeline events (news items) with streaming
-5. LLM ends turn with Vote event (proposals on floor)
-6. Player votes: Pass (0-2), Fail (any), Defer (rest)
+5. LLM ends turn with Vote event (1-3 topics with options)
+6. Player selects one option per topic (radio buttons)
 7. Player clicks Submit → VoteChoices sent to backend
 8. Repeat steps 4-7 until GameOver
 9. Vote tab hidden, Summary tab appears
