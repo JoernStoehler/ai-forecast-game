@@ -1,3 +1,24 @@
+# AI Forecast Game — Agent Instructions
+
+## Project Rules
+
+**Specs are requirements, not suggestions:**
+- `docs/*.md` files define what to build
+- Do NOT modify specs without explicit approval from Jörn
+- If a spec seems wrong or unclear, ASK before changing it
+
+**Definition of Done (before checking a checkbox):**
+- Code compiles and passes lint
+- Feature works end-to-end (not just "function exists")
+- Can be demonstrated (manually or via test)
+- `raise NotImplementedError` or `// TODO` stubs do NOT count as done
+
+**If blocked or uncertain:**
+- Don't guess — ask Jörn
+- Don't "fix" specs to match what you built — fix code to match specs
+
+---
+
 # Setup Status
 
 ## Smoke Test
@@ -51,13 +72,14 @@ npx playwright screenshot http://localhost:5173 /tmp/screenshot.png
 
 **Testing deployments**: Test from your own browser or local dev environment. CC web browsers cannot reach external URLs.
 
+## Ready (Cloudflare)
+- wrangler configured (credentials in environment)
+- D1 database created and migrations applied
+- Run `npx wrangler d1 migrations apply ai-forecast-game-db --remote` after adding new migrations
+
 ## Needs Setup
-- wrangler
-  - [ ] create .env from .env.example with CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
-  - [ ] `wrangler d1 create ai-forecast-game-db` → copy database_id to wrangler.toml
-  - [ ] configure subdomain in Cloudflare dashboard, update wrangler.toml routes
 - ci/cd
   - [ ] add CLOUDFLARE_API_TOKEN to GitHub repo secrets
   - [ ] add CLOUDFLARE_ACCOUNT_ID to GitHub repo secrets
-- d1 database
-  - [ ] write migrations in migrations/
+- custom domain
+  - [ ] configure subdomain in Cloudflare dashboard, update wrangler.toml routes
